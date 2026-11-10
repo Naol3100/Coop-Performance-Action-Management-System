@@ -70,7 +70,8 @@ import { UserSecuritySettingsModal } from './components/UserSecuritySettingsModa
 import { exportReportsToCSV } from './utils/exportUtils';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { getUserBiometricPreference } from './utils/webauthn';
-import { AlertCircle, Lock, Shield, Database, CheckCircle, AlertTriangle, X, RefreshCw, LogIn } from 'lucide-react';
+import { AiAssistant } from './components/AiAssistant';
+import { AlertCircle, Lock, Shield, Database, CheckCircle, AlertTriangle, X, RefreshCw, LogIn, Bot, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [systemConfig] = useState<SystemConfig>(INITIAL_CONFIG);
@@ -114,6 +115,7 @@ export default function App() {
   const [editingReport, setEditingReport] = useState<DisciplinaryReport | null>(null);
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState<boolean>(false);
+  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState<boolean>(false);
 
   // Optional filter drilldown
   const [forcedDistrictFilter, setForcedDistrictFilter] = useState<string | undefined>(undefined);
@@ -1045,6 +1047,7 @@ export default function App() {
         onOpenOfflineCenter={() => setActiveTab('offline-sync')}
         unsyncedCount={offlineQueue.length}
         onOpenGuide={() => setIsGuideOpen(true)}
+        onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
         canSwitchUser={isAuthorizedAdmin}
         onSignOut={handleSignOut}
         onOpenSecuritySettings={() => setIsSecurityModalOpen(true)}
@@ -1546,6 +1549,44 @@ export default function App() {
           onUpdateUser={handleUpdateUser}
         />
       )}
+
+      {/* Floating AI Assistant Chatbot Launcher Button */}
+      {!isAiAssistantOpen && (
+        <button
+          onClick={() => setIsAiAssistantOpen(true)}
+          className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-40 flex items-center gap-2.5 px-3.5 sm:px-4 py-2.5 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:from-blue-600 hover:to-indigo-600 text-white rounded-full shadow-xl hover:shadow-2xl border border-blue-400/40 transition-all duration-300 transform hover:scale-105 active:scale-95 group focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+          title="Open CoopBank AI Disciplinary Advisor & Assistant Chatbot"
+          aria-label="Open CoopBank AI Assistant Chatbot"
+        >
+          <div className="relative flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-blue-500/40 border border-blue-300/40 flex items-center justify-center text-white shadow-inner">
+              <Bot className="w-4 h-4 text-white group-hover:rotate-12 transition-transform duration-300" />
+            </div>
+            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
+            </span>
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-xs font-bold leading-tight flex items-center gap-1 text-white">
+              <span>AI Assistant</span>
+              <Sparkles className="w-3 h-3 text-amber-300 animate-pulse" />
+            </span>
+            <span className="text-[10px] text-blue-200/90 leading-tight">HR Case Advisor</span>
+          </div>
+        </button>
+      )}
+
+      {/* AI Disciplinary & HR Regulations Chatbot Modal */}
+      <AiAssistant
+        currentUser={activeUser}
+        isOpen={isAiAssistantOpen}
+        onClose={() => setIsAiAssistantOpen(false)}
+        onPreFillDraft={(draft) => {
+          setIsAiAssistantOpen(false);
+          setActiveTab('submit');
+        }}
+      />
 
       {/* Global Bank Footer */}
       <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-4 mt-auto text-xs">
