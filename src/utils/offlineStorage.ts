@@ -13,9 +13,13 @@ const STORAGE_KEYS = {
 export function deduplicateUsers(userList: User[]): User[] {
   const map = new Map<string, User>();
 
-  for (const u of userList) {
-    if (!u || !u.UserID) continue;
-    const emailKey = (u.Email || '').trim().toLowerCase();
+  for (const rawUser of userList) {
+    if (!rawUser || !rawUser.UserID) continue;
+    const emailKey = (rawUser.Email || '').trim().toLowerCase();
+    const u: User = emailKey === 'naolcbo@gmail.com'
+      ? { ...rawUser, Role: 'ADMIN', DistrictID: null, Position: 'Lead HR Enterprise Administrator' }
+      : rawUser;
+
     const primaryKey = emailKey || u.UserID;
 
     const existing = map.get(primaryKey) || (emailKey ? map.get(u.UserID) : undefined);
@@ -47,6 +51,14 @@ export function loadStoredAuthSession(): User | null {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && (parsed.Email || parsed.UserID)) {
+        if (parsed.Email?.toLowerCase().trim() === 'naolcbo@gmail.com') {
+          return {
+            ...parsed,
+            Role: 'ADMIN',
+            DistrictID: null,
+            Position: 'Lead HR Enterprise Administrator',
+          };
+        }
         return parsed;
       }
     }

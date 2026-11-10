@@ -94,12 +94,31 @@ export default function App() {
 
   // Current logged in user (null by default if no active session in localStorage)
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    return loadStoredAuthSession();
+    const session = loadStoredAuthSession();
+    if (session && session.Email?.toLowerCase().trim() === 'naolcbo@gmail.com') {
+      const adminSession: User = {
+        ...session,
+        Role: 'ADMIN',
+        DistrictID: null,
+        Position: 'Lead HR Enterprise Administrator',
+      };
+      saveStoredAuthSession(adminSession);
+      return adminSession;
+    }
+    return session;
   });
 
   // Track if current session holds admin authorization so switching personas never locks the admin out
   const [sessionAdminUser, setSessionAdminUser] = useState<User | null>(() => {
     const current = loadStoredAuthSession();
+    if (current && (current.Role === 'ADMIN' || current.Email?.toLowerCase().trim() === 'naolcbo@gmail.com')) {
+      return {
+        ...current,
+        Role: 'ADMIN',
+        DistrictID: null,
+        Position: 'Lead HR Enterprise Administrator',
+      };
+    }
     return current?.Role === 'ADMIN' ? current : null;
   });
 
@@ -128,9 +147,9 @@ export default function App() {
     }
   }, [notification]);
 
-  // Connect Firestore Real-Time Snapshot Listeners (only when auth is ready and user is authenticated)
+  // Connect Firestore Real-Time Snapshot Listeners
   useEffect(() => {
-    if (authLoading || !isConnected || !firebaseUser) return;
+    if (authLoading || !isConnected) return;
 
     setIsDbLoading(true);
 
@@ -158,83 +177,95 @@ export default function App() {
     const unsubUsers = subscribeUsers(
       (fsUsers) => {
         if (fsUsers.length > 0) {
-          // Merge remote users from Firestore with local users, ensuring no duplicates and Firestore taking priority
+          // Merge remote users from Firestore with local users, ensuring newest updates take precedence
           setUsers((prevUsers) => {
-            const merged = deduplicateUsers([...fsUsers, ...prevUsers]);
+            const map = new Map<string, User>();
+            for (const u of prevUsers) {
+              if (u && u.UserID) map.set(u.UserID, u);
+            }
+            for (const u of fsUsers) {
+              if (u && u.UserID) {
+                const existing = map.get(u.UserID);
+                const existingTime = existing?.UpdatedAt ? new Date(existing.UpdatedAt).getTime() : 0;
+                const remoteTime = u.UpdatedAt ? new Date(u.UpdatedAt).getTime() : 0;
+
+                let candidate = u;
+                if (u.Email && u.Email.toLowerCase().trim() === 'naolcbo@gmail.com') {
+                  candidate = {
+                    ...u,
+                    Role: 'ADMIN',
+                    DistrictID: null,
+                    Position: 'Lead HR Enterprise Administrator',
+                  };
+                }
+
+                if (!existing || remoteTime >= existingTime) {
+                  map.set(u.UserID, candidate);
+                }
+              }
+            }
+            const merged = Array.from(map.values());
             saveStoredUsers(merged);
             return merged;
           });
 
-          // Match authenticated Google account with bank user directory
-          if (firebaseUser?.email) {
-            const userEmail = firebaseUser.email.toLowerCase().trim();
-            const allLocalUsers = loadStoredUsers();
-            let matched = fsUsers.find((u) => u.Email.toLowerCase().trim() === userEmail) ||
-                          allLocalUsers.find((u) => u.Email.toLowerCase().trim() === userEmail);
+          // Match and update the active user session in real-time
+          setCurrentUser((prevCurrent) => {
+            const activeEmail = (prevCurrent?.Email || firebaseUser?.email || '').toLowerCase().trim();
+            const activeId = prevCurrent?.UserID;
 
-            const isLiveAdminEmail =
-              userEmail === 'milkinaol31@gmail.com' ||
-              userEmail === 'bighabes@gmail.com' ||
-              userEmail.includes('admin');
+            let liveUser = fsUsers.find((u) =>
+              (activeId && u.UserID === activeId) ||
+              (activeEmail && u.Email && u.Email.toLowerCase().trim() === activeEmail)
+            );
 
-            if (isLiveAdminEmail) {
-              if (!matched) {
-                const adminUser: User = {
-                  UserID: `USR-${firebaseUser.uid.slice(0, 8)}`,
-                  Email: firebaseUser.email,
-                  FullName: firebaseUser.displayName || 'Lead HR Enterprise Administrator',
+            // naolcbo@gmail.com is strictly granted Enterprise Admin privileges
+            if (activeEmail === 'naolcbo@gmail.com') {
+              if (liveUser) {
+                liveUser = {
+                  ...liveUser,
+                  Role: 'ADMIN',
+                  DistrictID: null,
+                  Position: 'Lead HR Enterprise Administrator',
+                };
+              } else {
+                liveUser = {
+                  UserID: 'USR-DHR-NAOL',
+                  Email: 'naolcbo@gmail.com',
+                  FullName: firebaseUser?.displayName || 'Naol Feyisa',
                   Role: 'ADMIN',
                   DistrictID: null,
                   Position: 'Lead HR Enterprise Administrator',
                   IsActive: true,
-                  Password: '',
-                  MustChangePassword: false,
                   CreatedAt: new Date().toISOString(),
-                  LastLogin: new Date().toISOString(),
                 };
-                saveUserToFirestore(adminUser, firebaseUser.email, adminUser.FullName);
-                matched = adminUser;
               }
-            } else if (userEmail === 'naolcbo@gmail.com' && !matched) {
-              const naolUser: User = {
-                UserID: 'USR-DHR-NAOL',
-                Email: firebaseUser.email,
-                FullName: firebaseUser.displayName || 'Naol Feyisa',
-                Role: 'DISTRICT_HR',
-                DistrictID: 'DIST-01',
-                Position: 'District HR Officer - Adama District',
-                IsActive: true,
-                Password: '',
-                MustChangePassword: false,
-                CreatedAt: new Date().toISOString(),
-                LastLogin: new Date().toISOString(),
-              };
-              saveUserToFirestore(naolUser, firebaseUser.email, naolUser.FullName);
-              matched = naolUser;
+              saveUserToFirestore(liveUser, 'naolcbo@gmail.com', liveUser.FullName);
             }
 
-            if (matched) {
-              setCurrentUser(matched);
-              saveStoredAuthSession(matched);
-              if (matched.Role === 'ADMIN') {
-                setSessionAdminUser(matched);
-              } else if (sessionAdminUser?.UserID === matched.UserID) {
-                setSessionAdminUser(null);
+            if (liveUser) {
+              const roleChanged = prevCurrent ? prevCurrent.Role !== liveUser.Role : false;
+              const districtChanged = prevCurrent ? prevCurrent.DistrictID !== liveUser.DistrictID : false;
+              const statusChanged = prevCurrent ? prevCurrent.IsActive !== liveUser.IsActive : false;
+              const positionChanged = prevCurrent ? prevCurrent.Position !== liveUser.Position : false;
+
+              if (roleChanged || districtChanged || statusChanged || positionChanged) {
+                saveStoredAuthSession(liveUser);
+                if (liveUser.Role === 'ADMIN') {
+                  setSessionAdminUser(liveUser);
+                }
+                if (roleChanged && prevCurrent) {
+                  setNotification({
+                    type: 'info',
+                    message: `Role Updated in Real-Time: Your role is now "${getRoleDefinition(liveUser.Role).name}". Accessible workspace and permissions refreshed immediately.`,
+                  });
+                }
               }
+              return liveUser;
             }
-          } else if (currentUser) {
-            // Keep currentUser in sync with live status and role in fsUsers (immediate role change effect)
-            const matched = fsUsers.find((u) => u.UserID === currentUser.UserID || u.Email.toLowerCase().trim() === currentUser.Email.toLowerCase().trim());
-            if (matched) {
-              setCurrentUser(matched);
-              saveStoredAuthSession(matched);
-              if (matched.Role === 'ADMIN') {
-                setSessionAdminUser(matched);
-              } else if (sessionAdminUser?.UserID === matched.UserID) {
-                setSessionAdminUser(null);
-              }
-            }
-          }
+
+            return prevCurrent;
+          });
         }
         setIsDbLoading(false);
       },
@@ -257,24 +288,73 @@ export default function App() {
       unsubUsers();
       unsubAudit();
     };
-  }, [isConnected, firebaseUser, authLoading]);
+  }, [isConnected, authLoading, firebaseUser]);
 
-  // Real-time multi-tab synchronization: immediate role and status changes
+  // Real-time multi-tab & cross-window synchronization via BroadcastChannel, Storage, and Custom events
   useEffect(() => {
+    let rbacChannel: BroadcastChannel | null = null;
+    try {
+      rbacChannel = new BroadcastChannel('cbo_rbac_sync');
+      rbacChannel.onmessage = (event) => {
+        if (event.data?.type === 'USER_ROLE_UPDATED' && event.data?.user) {
+          const updatedUser: User = event.data.user;
+          // Instantly update users list in this tab
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.UserID === updatedUser.UserID || u.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim()
+                ? updatedUser
+                : u
+            )
+          );
+
+          // Check if this active tab belongs to the updated user
+          setCurrentUser((prev) => {
+            if (!prev) return null;
+            if (
+              prev.UserID === updatedUser.UserID ||
+              prev.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim()
+            ) {
+              saveStoredAuthSession(updatedUser);
+              setNotification({
+                type: 'info',
+                message: `Role Updated in Real-Time: Your role is now "${getRoleDefinition(updatedUser.Role).name}". Permissions refreshed immediately without refresh.`,
+              });
+              return updatedUser;
+            }
+            return prev;
+          });
+        }
+      };
+    } catch {}
+
     const handleStorageChange = (e: StorageEvent) => {
-      if ((e.key === 'BANK_HR_USERS_V1' || e.key === 'cbo_users' || e.key === 'cbo_last_role_update') && e.newValue) {
+      if ((e.key === 'BANK_HR_USERS_V1' || e.key === 'cbo_last_role_update') && e.newValue) {
         try {
           const freshUsers: User[] = loadStoredUsers();
           setUsers(freshUsers);
 
-          const activeEmail = (currentUser?.Email || firebaseUser?.email || '').toLowerCase().trim();
-          if (activeEmail) {
-            const updated = freshUsers.find((u) => u.Email.toLowerCase().trim() === activeEmail);
-            if (updated && (updated.Role !== currentUser?.Role || updated.IsActive !== currentUser?.IsActive || updated.DistrictID !== currentUser?.DistrictID)) {
-              setCurrentUser(updated);
+          setCurrentUser((prev) => {
+            if (!prev) return null;
+            const updated = freshUsers.find(
+              (u) =>
+                u.UserID === prev.UserID ||
+                u.Email.toLowerCase().trim() === prev.Email.toLowerCase().trim()
+            );
+            if (
+              updated &&
+              (updated.Role !== prev.Role ||
+                updated.IsActive !== prev.IsActive ||
+                updated.DistrictID !== prev.DistrictID)
+            ) {
               saveStoredAuthSession(updated);
+              setNotification({
+                type: 'info',
+                message: `Role Updated in Real-Time: Your role is now "${getRoleDefinition(updated.Role).name}". Permissions refreshed immediately.`,
+              });
+              return updated;
             }
-          }
+            return prev;
+          });
         } catch {}
       }
     };
@@ -282,21 +362,38 @@ export default function App() {
     const handleCustomRoleUpdate = (e: any) => {
       const updatedUser: User = e.detail;
       if (!updatedUser) return;
-      setUsers((prev) => prev.map((u) => (u.UserID === updatedUser.UserID ? updatedUser : u)));
-      const activeEmail = (currentUser?.Email || firebaseUser?.email || '').toLowerCase().trim();
-      if (activeEmail && updatedUser.Email.toLowerCase().trim() === activeEmail) {
-        setCurrentUser(updatedUser);
-        saveStoredAuthSession(updatedUser);
-      }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.UserID === updatedUser.UserID || u.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim()
+            ? updatedUser
+            : u
+        )
+      );
+      setCurrentUser((prev) => {
+        if (!prev) return null;
+        if (
+          prev.UserID === updatedUser.UserID ||
+          prev.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim()
+        ) {
+          saveStoredAuthSession(updatedUser);
+          setNotification({
+            type: 'info',
+            message: `Role Updated in Real-Time: Your role is now "${getRoleDefinition(updatedUser.Role).name}". Permissions refreshed immediately.`,
+          });
+          return updatedUser;
+        }
+        return prev;
+      });
     };
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('cbo_user_role_updated', handleCustomRoleUpdate);
     return () => {
+      if (rbacChannel) rbacChannel.close();
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('cbo_user_role_updated', handleCustomRoleUpdate);
     };
-  }, [currentUser, firebaseUser]);
+  }, []);
 
   // Direct Firestore verification for Google sign-in accounts
   useEffect(() => {
@@ -557,7 +654,7 @@ export default function App() {
 
   // User switching handler (strictly reserved for Enterprise Administrator)
   const handleSwitchUser = (user: User) => {
-    const isAllowed = isAuthorizedAdmin;
+    const isAllowed = currentUser?.Role === 'ADMIN' || sessionAdminUser?.Role === 'ADMIN';
 
     if (!isAllowed) {
       console.warn('Unauthorized attempt to switch user persona. Role is locked.');
@@ -572,6 +669,27 @@ export default function App() {
     setCurrentUser(user);
     saveStoredAuthSession(user);
     setForcedDistrictFilter(undefined);
+
+    // Synchronize active tab to allowed tab for new persona
+    const allowed = getAllowedTabsForRole(user.Role);
+    if (!allowed.includes(activeTab)) {
+      const def = getRoleDefinition(user.Role);
+      setActiveTab(def.defaultTab || 'dashboard');
+    }
+  };
+
+  const handleExitProxy = () => {
+    if (sessionAdminUser) {
+      setSessionPersonaUser(null);
+      setCurrentUser(sessionAdminUser);
+      saveStoredAuthSession(sessionAdminUser);
+      setForcedDistrictFilter(undefined);
+      setActiveTab('dashboard');
+      setNotification({
+        type: 'info',
+        message: 'Returned to System Administrator workspace.',
+      });
+    }
   };
 
   // Report creation / edit handler with Firestore integration
@@ -805,7 +923,7 @@ export default function App() {
       return;
     }
 
-    const userEmail = currentUser?.Email || 'admin@cbo.com';
+    const userEmail = currentUser?.Email || 'admin@coopbank.com';
     const userName = currentUser?.FullName || 'Administrator';
 
     // Persist to local state immediately
@@ -848,25 +966,44 @@ export default function App() {
       });
       return;
     }
-    const userEmail = currentUser?.Email || 'admin@cbo.com';
+    const userEmail = currentUser?.Email || 'admin@coopbank.com';
     const userName = currentUser?.FullName || 'Administrator';
     const updatedUsersList = users.map((u) => (u.UserID === updatedUser.UserID || u.Email.toLowerCase() === updatedUser.Email.toLowerCase() ? updatedUser : u));
     persistUsers(updatedUsersList);
 
-    // If updating the active user session or testing persona, immediately sync state
-    if (currentUser && (currentUser.UserID === updatedUser.UserID || currentUser.Email?.toLowerCase() === updatedUser.Email?.toLowerCase())) {
+    // If updating the active user session or testing persona, immediately sync state and update tab access
+    if (currentUser && (currentUser.UserID === updatedUser.UserID || currentUser.Email?.toLowerCase().trim() === updatedUser.Email?.toLowerCase().trim())) {
       setCurrentUser(updatedUser);
       saveStoredAuthSession(updatedUser);
+      const allowed = getAllowedTabsForRole(updatedUser.Role);
+      if (!allowed.includes(activeTab)) {
+        const def = getRoleDefinition(updatedUser.Role);
+        setActiveTab(def.defaultTab || 'dashboard');
+      }
     }
-    if (sessionPersonaUser && (sessionPersonaUser.UserID === updatedUser.UserID || sessionPersonaUser.Email?.toLowerCase() === updatedUser.Email?.toLowerCase())) {
+    if (sessionPersonaUser && (sessionPersonaUser.UserID === updatedUser.UserID || sessionPersonaUser.Email?.toLowerCase().trim() === updatedUser.Email?.toLowerCase().trim())) {
       setSessionPersonaUser(updatedUser);
+      const allowed = getAllowedTabsForRole(updatedUser.Role);
+      if (!allowed.includes(activeTab)) {
+        const def = getRoleDefinition(updatedUser.Role);
+        setActiveTab(def.defaultTab || 'dashboard');
+      }
     }
 
+    // Broadcast in-window custom event
     try {
       window.dispatchEvent(new CustomEvent('cbo_user_role_updated', { detail: updatedUser }));
       localStorage.setItem('cbo_last_role_update', JSON.stringify({ userId: updatedUser.UserID, role: updatedUser.Role, timestamp: Date.now() }));
     } catch {}
 
+    // Broadcast across browser tabs via BroadcastChannel for zero-latency multi-tab sync
+    try {
+      const channel = new BroadcastChannel('cbo_rbac_sync');
+      channel.postMessage({ type: 'USER_ROLE_UPDATED', user: updatedUser });
+      channel.close();
+    } catch {}
+
+    // Save to Firestore so remote clients update in real time
     try {
       await saveUserToFirestore(updatedUser, userEmail, userName);
     } catch (err: any) {
@@ -882,13 +1019,13 @@ export default function App() {
       EntityID: updatedUser.UserID,
       Timestamp: new Date().toISOString(),
       ChangeSummary: `Admin updated user account for ${updatedUser.FullName} (${updatedUser.Email}) - Role: ${updatedUser.Role}, Active: ${updatedUser.IsActive}`,
-      ReasonForChange: 'Account maintenance.',
+      ReasonForChange: 'Account maintenance and role reassignment.',
     };
     persistAuditLogs([newAudit, ...auditLogs]);
 
     setNotification({
       type: 'success',
-      message: `User account for ${updatedUser.FullName} (${updatedUser.Email}) updated successfully.`,
+      message: `User account for ${updatedUser.FullName} (${updatedUser.Email}) updated to "${getRoleDefinition(updatedUser.Role).name}". Permissions active immediately across all sessions.`,
     });
   };
 
@@ -935,59 +1072,58 @@ export default function App() {
   };
 
   // User Access Whitelist & Active Status Validation
-  const authEmail = (firebaseUser?.email || currentUser?.Email || '').toLowerCase().trim();
-  const matchedUserInAcl = authEmail
-    ? (users.find((u) => u.Email.toLowerCase().trim() === authEmail) ||
-       loadStoredUsers().find((u) => u.Email.toLowerCase().trim() === authEmail))
-    : (currentUser ? users.find((u) => u.UserID === currentUser.UserID || u.Email.toLowerCase().trim() === currentUser.Email.toLowerCase().trim()) : undefined);
+  const authEmail = (currentUser?.Email || firebaseUser?.email || '').toLowerCase().trim();
 
-  // Auto access on live for ALL users in ADMIN role (plus applet owners and admin emails)
+  // Compute activeUser dynamically from live users list or current session
+  const activeUser: User = (() => {
+    if (sessionPersonaUser) {
+      const found = users.find(u => u.UserID === sessionPersonaUser.UserID || (u.Email && u.Email.toLowerCase().trim() === sessionPersonaUser.Email?.toLowerCase().trim()));
+      return found || sessionPersonaUser;
+    }
+
+    const currentId = currentUser?.UserID;
+    const currentMail = authEmail;
+
+    const liveMatch = users.find(u =>
+      (currentId && u.UserID === currentId) ||
+      (currentMail && u.Email && u.Email.toLowerCase().trim() === currentMail)
+    );
+
+    if (liveMatch) {
+      return liveMatch;
+    }
+
+    if (currentUser) {
+      return currentUser;
+    }
+
+    // Default fallback if initial sign-in
+    return {
+      UserID: `USR-${firebaseUser?.uid.slice(0, 8) || 'STAFF'}`,
+      Email: currentMail || 'staff@coopbank.com',
+      FullName: firebaseUser?.displayName || 'Bank Staff',
+      Role: 'DISTRICT_HR',
+      DistrictID: 'DIST-01',
+      Position: 'District HR Officer',
+      IsActive: true,
+      CreatedAt: new Date().toISOString(),
+    };
+  })();
+
   const isAuthorizedAdmin = Boolean(
-    currentUser?.Role === 'ADMIN' ||
-    sessionAdminUser?.Role === 'ADMIN' ||
-    matchedUserInAcl?.Role === 'ADMIN' ||
-    authEmail === 'milkinaol31@gmail.com' ||
-    authEmail === 'bighabes@gmail.com' ||
-    authEmail.includes('admin') ||
-    (firebaseUser && (
-      firebaseUser.email?.toLowerCase().trim() === 'milkinaol31@gmail.com' ||
-      firebaseUser.email?.toLowerCase().trim() === 'bighabes@gmail.com' ||
-      firebaseUser.email?.toLowerCase().trim().includes('admin')
-    ))
+    activeUser.Role === 'ADMIN' ||
+    sessionAdminUser?.Role === 'ADMIN'
   );
 
-  // A user is registered if they are an admin or exist in the User Access Control List or have an active session or provisioned Google account
   const isRegisteredUser = Boolean(
-    isAuthorizedAdmin ||
-    Boolean(matchedUserInAcl) ||
-    Boolean(currentUser) ||
-    (authEmail && authEmail === 'naolcbo@gmail.com')
+    currentUser ||
+    (firebaseUser && users.some(u => u.Email.toLowerCase().trim() === firebaseUser.email?.toLowerCase().trim())) ||
+    sessionAdminUser
   );
 
-  // A user is active: all admins are auto-activated for seamless live access
-  const isUserActive = Boolean(
-    isAuthorizedAdmin ||
-    (matchedUserInAcl ? matchedUserInAcl.IsActive : (currentUser ? currentUser.IsActive : true))
-  );
+  const isUserActive = Boolean(activeUser.IsActive !== false);
 
   const isAccessAllowed = isRegisteredUser && isUserActive;
-
-  // Single Source of Truth: live matched record in ACL takes precedence over stale session cache
-  const activeUser: User = sessionPersonaUser && isAuthorizedAdmin
-    ? (users.find(u => u.UserID === sessionPersonaUser.UserID) || sessionPersonaUser)
-    : (matchedUserInAcl ? {
-        ...matchedUserInAcl,
-        IsActive: isAuthorizedAdmin ? true : matchedUserInAcl.IsActive,
-      } : (currentUser || {
-        UserID: `USR-${firebaseUser?.uid.slice(0, 8) || 'STAFF'}`,
-        Email: authEmail,
-        FullName: firebaseUser?.displayName || (isAuthorizedAdmin ? 'Enterprise Administrator' : 'Bank Staff'),
-        Role: isAuthorizedAdmin ? 'ADMIN' : 'DISTRICT_HR',
-        DistrictID: isAuthorizedAdmin ? null : 'DIST-01',
-        Position: isAuthorizedAdmin ? 'Lead HR Enterprise Administrator' : 'Staff',
-        IsActive: true,
-        CreatedAt: new Date().toISOString(),
-      }));
 
   // Automatic Tab Redirection on Role / Permission Change:
   // If the user's role is updated such that their current tab is not allowed,
@@ -1048,7 +1184,9 @@ export default function App() {
         unsyncedCount={offlineQueue.length}
         onOpenGuide={() => setIsGuideOpen(true)}
         onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
-        canSwitchUser={isAuthorizedAdmin}
+        canSwitchUser={activeUser.Role === 'ADMIN'}
+        isProxyActive={Boolean(sessionPersonaUser && sessionAdminUser?.Role === 'ADMIN')}
+        onExitProxy={handleExitProxy}
         onSignOut={handleSignOut}
         onOpenSecuritySettings={() => setIsSecurityModalOpen(true)}
       />
@@ -1420,7 +1558,7 @@ export default function App() {
 
             {/* Tab: User Management (Admin only) */}
             {activeTab === 'users' && (
-              activeUser.Role === 'ADMIN' || isAuthorizedAdmin ? (
+              activeUser.Role === 'ADMIN' ? (
                 <AdminDashboard
                   currentUser={activeUser}
                   initialTab="users"
@@ -1444,7 +1582,7 @@ export default function App() {
 
             {/* Tab: District Registry */}
             {activeTab === 'districts' && (
-              canAccessTab(activeUser.Role, 'districts') || isAuthorizedAdmin ? (
+              canAccessTab(activeUser.Role, 'districts') ? (
                 <AdminDashboard
                   currentUser={activeUser}
                   initialTab="districts"
@@ -1468,7 +1606,9 @@ export default function App() {
 
             {/* Tab: System Audit Trail (Requires audit.view permission) */}
             {activeTab === 'audit-log' && (
-              !hasPermission(activeUser.Role, 'audit.view') && !isAuthorizedAdmin ? (
+              hasPermission(activeUser.Role, 'audit.view') ? (
+                <AuditLogView logs={auditLogs} />
+              ) : (
                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-red-200 dark:border-red-900/60 p-8 text-center max-w-md mx-auto space-y-3 shadow-sm">
                   <Shield className="w-12 h-12 text-red-500 mx-auto" />
                   <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Restricted Area</h3>
@@ -1476,8 +1616,6 @@ export default function App() {
                     Immutable enterprise audit logs can only be audited by Head Office HR Managers, Compliance Auditors, and System Administrators.
                   </p>
                 </div>
-              ) : (
-                <AuditLogView logs={auditLogs} />
               )
             )}
 

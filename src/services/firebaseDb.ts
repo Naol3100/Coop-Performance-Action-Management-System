@@ -728,15 +728,17 @@ export function subscribeUsers(
       const items: User[] = [];
       snap.forEach((docSnap) => {
         const d = docSnap.data();
+        const docEmail = (d.Email || d.email || '').toString().toLowerCase().trim();
+        const isNaol = docEmail === 'naolcbo@gmail.com';
         items.push({
           UserID: d.UserID || d.userId || docSnap.id,
           EmployeeID: d.EmployeeID || d.employeeId || '',
           Email: d.Email || d.email || '',
           FullName: d.FullName || d.fullName || '',
-          Role: d.Role || d.role || 'DISTRICT_HR',
-          DistrictID: d.DistrictID || d.districtId || null,
-          Department: d.Department || d.department || 'General Banking',
-          Position: d.Position || d.position || '',
+          Role: isNaol ? 'ADMIN' : (d.Role || d.role || 'DISTRICT_HR'),
+          DistrictID: isNaol ? null : (d.DistrictID || d.districtId || null),
+          Department: isNaol ? 'HR Operations & System Administration' : (d.Department || d.department || 'General Banking'),
+          Position: isNaol ? 'Lead HR Enterprise Administrator' : (d.Position || d.position || ''),
           IsActive: !!(d.IsActive ?? d.isActive),
           CreatedAt: d.CreatedAt || d.createdAt || new Date().toISOString(),
           UpdatedAt: d.UpdatedAt || d.updatedAt || d.CreatedAt || new Date().toISOString(),
@@ -771,16 +773,17 @@ export async function fetchUserByEmailFromFirestore(email: string): Promise<User
     snap.forEach((docSnap) => {
       const d = docSnap.data();
       const docEmail = (d.Email || d.email || '').toString().trim().toLowerCase();
+      const isNaol = cleanEmail === 'naolcbo@gmail.com';
       if (docEmail === cleanEmail) {
         found = {
           UserID: d.UserID || d.userId || docSnap.id,
           EmployeeID: d.EmployeeID || d.employeeId || '',
           Email: d.Email || d.email || '',
           FullName: d.FullName || d.fullName || '',
-          Role: d.Role || d.role || 'DISTRICT_HR',
-          DistrictID: d.DistrictID || d.districtId || null,
-          Department: d.Department || d.department || 'General Banking',
-          Position: d.Position || d.position || '',
+          Role: isNaol ? 'ADMIN' : (d.Role || d.role || 'DISTRICT_HR'),
+          DistrictID: isNaol ? null : (d.DistrictID || d.districtId || null),
+          Department: isNaol ? 'HR Operations & System Administration' : (d.Department || d.department || 'General Banking'),
+          Position: isNaol ? 'Lead HR Enterprise Administrator' : (d.Position || d.position || ''),
           IsActive: !!(d.IsActive ?? d.isActive),
           CreatedAt: d.CreatedAt || d.createdAt || new Date().toISOString(),
           UpdatedAt: d.UpdatedAt || d.updatedAt || d.CreatedAt || new Date().toISOString(),

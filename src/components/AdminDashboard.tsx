@@ -766,23 +766,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         userEmail: u.Email,
                                         previousRole: u.Role,
                                         newRole: newRole,
-                                        changedByEmail: 'admin@coopbank.com',
-                                        changedByName: 'Enterprise Administrator',
+                                        changedByEmail: currentUser?.Email || 'admin@coopbank.com',
+                                        changedByName: currentUser?.FullName || 'Enterprise Administrator',
                                         changedAt: now,
                                         reason: `Role changed from ${getRoleDefinition(u.Role).name} to ${roleDef.name} via User Management Console.`,
                                       },
                                       ...(u.RoleHistory || []),
                                     ];
 
-                                    onUpdateUser({
+                                    const updated: User = {
                                       ...u,
                                       Role: newRole,
                                       DistrictID: isDist ? (u.DistrictID || 'DIST-01') : null,
-                                      Position: u.Position || defaultPos,
+                                      Position: defaultPos,
                                       RoleHistory: roleHistory,
                                       UpdatedAt: now,
-                                      UpdatedBy: 'Enterprise Administrator',
-                                    });
+                                      UpdatedBy: currentUser?.FullName || 'Enterprise Administrator',
+                                    };
+
+                                    onUpdateUser(updated);
                                     setActionSuccessMessage(`Role for ${u.FullName} (${u.Email}) updated to ${roleDef.name}. Immediate effect applied across all tabs!`);
                                   }}
                                   className="text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer hover:border-purple-400"

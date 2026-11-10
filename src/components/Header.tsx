@@ -33,6 +33,8 @@ interface HeaderProps {
   onOpenGuide: () => void;
   onOpenAiAssistant?: () => void;
   canSwitchUser?: boolean;
+  isProxyActive?: boolean;
+  onExitProxy?: () => void;
   onSignOut?: () => void;
   onOpenSecuritySettings?: () => void;
 }
@@ -48,6 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenGuide,
   onOpenAiAssistant,
   canSwitchUser,
+  isProxyActive,
+  onExitProxy,
   onSignOut,
   onOpenSecuritySettings,
 }) => {
@@ -56,16 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { firebaseUser, authLoading, isConnected, signInWithGoogle, signOut } = useFirebase();
 
   const roleDef = getRoleDefinition(currentUser.Role);
-
-  const isAuthorizedAdmin = Boolean(
-    currentUser?.Role === 'ADMIN' ||
-    (firebaseUser && (
-      firebaseUser.email?.toLowerCase() === 'milkinaol31@gmail.com' ||
-      firebaseUser.email?.toLowerCase() === 'bighabes@gmail.com' ||
-      firebaseUser.email?.toLowerCase().includes('admin')
-    )) ||
-    canSwitchUser
-  );
+  const canShowUserSwitcher = Boolean(currentUser?.Role === 'ADMIN' && canSwitchUser);
 
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
@@ -259,7 +254,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* User selector dropdown ONLY for Authorized Administrator */}
-          {isAuthorizedAdmin && (
+          {canShowUserSwitcher && (
             <div className="relative">
               <label htmlFor="user-select" className="sr-only">Switch User Persona (Administrator Access Only)</label>
               <div className="flex items-center bg-slate-900 rounded-lg border border-purple-500/60 px-2 py-1.5 text-xs text-slate-200 shadow-inner">
@@ -296,6 +291,18 @@ export const Header: React.FC<HeaderProps> = ({
                 </select>
               </div>
             </div>
+          )}
+
+          {/* When an Administrator is actively testing as a non-admin persona, provide return button */}
+          {isProxyActive && onExitProxy && currentUser.Role !== 'ADMIN' && (
+            <button
+              onClick={onExitProxy}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-700/80 shadow-sm transition"
+              title="Exit Proxy Persona and return to your Administrator account"
+            >
+              <LogOut className="w-3.5 h-3.5 rotate-180 text-purple-300" />
+              <span>Exit Proxy (Back to Admin)</span>
+            </button>
           )}
         </div>
       </div>

@@ -143,14 +143,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       // Auto-permit Lead Administrators or naolcbo@gmail.com even if initial sync is pending
       if (!matchedUser && (cleanEmail === 'milkinaol31@gmail.com' || cleanEmail === 'bighabes@gmail.com' || cleanEmail === 'naolcbo@gmail.com' || cleanEmail.includes('admin'))) {
-        const isAdminEmail = cleanEmail !== 'naolcbo@gmail.com';
         matchedUser = {
           UserID: cleanEmail === 'naolcbo@gmail.com' ? 'USR-DHR-NAOL' : 'USR-ADMIN-AUTO',
           Email: cleanEmail,
           FullName: cleanEmail === 'naolcbo@gmail.com' ? 'Naol Feyisa' : 'Lead HR Enterprise Administrator',
-          Role: isAdminEmail ? 'ADMIN' : 'DISTRICT_HR',
-          DistrictID: isAdminEmail ? null : 'DIST-01',
-          Position: isAdminEmail ? 'Enterprise System Administrator' : 'District HR Officer - Adama District',
+          Role: 'ADMIN',
+          DistrictID: null,
+          Position: 'Lead HR Enterprise Administrator',
           IsActive: true,
           CreatedAt: new Date().toISOString(),
           Password: 'CoopBank@2026',
