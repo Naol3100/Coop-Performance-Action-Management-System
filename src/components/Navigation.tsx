@@ -36,6 +36,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   onTabChange,
   userRole,
+  isAuthorizedAdmin,
   pendingReviewsCount,
   correctionsCount,
   offlineQueueCount,
@@ -136,7 +137,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: 'users',
       label: 'User Management & RBAC',
       icon: Users,
-      allowed: canAccessTab(userRole, 'users'),
+      allowed: canAccessTab(userRole, 'users') || Boolean(isAuthorizedAdmin),
       restrictedTooltip: 'User Access Control List and Role Assignments are restricted to System Administrators.',
     },
     {

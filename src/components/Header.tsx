@@ -60,7 +60,8 @@ export const Header: React.FC<HeaderProps> = ({
   const { firebaseUser, authLoading, isConnected, signInWithGoogle, signOut } = useFirebase();
 
   const roleDef = getRoleDefinition(currentUser.Role);
-  const canShowUserSwitcher = Boolean(currentUser?.Role === 'ADMIN' && canSwitchUser);
+  // Strictly only show switcher dropdown when logged in as an active Administrator and not proxying
+  const canShowUserSwitcher = Boolean(currentUser?.Role === 'ADMIN' && canSwitchUser && !isProxyActive);
 
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">

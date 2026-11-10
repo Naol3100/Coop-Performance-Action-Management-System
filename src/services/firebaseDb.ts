@@ -49,6 +49,36 @@ export const COLLECTIONS = {
 } as const;
 
 /**
+ * Recursively removes all undefined values from an object or array.
+ * Firestore throws a fatal error if any field in an object passed to setDoc/updateDoc is undefined.
+ */
+export function cleanFirestoreData<T>(data: T): T {
+  if (data === undefined) {
+    return null as unknown as T;
+  }
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  if (data instanceof Date) {
+    return data.toISOString() as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => cleanFirestoreData(item)) as unknown as T;
+  }
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) {
+      continue;
+    } else if (value !== null && typeof value === 'object') {
+      result[key] = cleanFirestoreData(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result as T;
+}
+
+/**
  * Seed Firestore with initial fictional test records if collections are currently empty.
  * This guarantees the user has immediate, full data across all 13 districts, initial reports,
  * and audit records stored in Firestore.
@@ -72,7 +102,7 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
       if (!hasAdama) {
         for (const d of INITIAL_DISTRICTS) {
           const dDoc = doc(db, COLLECTIONS.DISTRICTS, d.DistrictID);
-          await setDoc(dDoc, {
+          await setDoc(dDoc, cleanFirestoreData({
             districtId: d.DistrictID,
             DistrictID: d.DistrictID,
             districtCode: d.DistrictCode,
@@ -85,16 +115,17 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
             OfficeLocation: d.OfficeLocation,
             isActive: d.IsActive,
             IsActive: d.IsActive,
-            directorName: d.DirectorName,
-            DirectorName: d.DirectorName,
-          }, { merge: true }).catch(console.error);
+            directorName: d.DirectorName || '',
+            DirectorName: d.DirectorName || '',
+          }), { merge: true }).catch(console.error);
         }
       }
 
       // Ensure all initial bank users (including naolcbo@gmail.com and Lead Admins) are provisioned in Users collection
       for (const u of INITIAL_USERS) {
         const userDocRef = doc(db, COLLECTIONS.USERS, u.UserID);
-        await setDoc(userDocRef, {
+        const safeNow = new Date().toISOString();
+        await setDoc(userDocRef, cleanFirestoreData({
           userId: u.UserID,
           UserID: u.UserID,
           email: u.Email,
@@ -103,19 +134,19 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
           FullName: u.FullName,
           role: u.Role,
           Role: u.Role,
-          districtId: u.DistrictID || '',
-          DistrictID: u.DistrictID,
-          position: u.Position,
-          Position: u.Position,
-          isActive: u.IsActive,
-          IsActive: u.IsActive,
-          createdAt: u.CreatedAt || new Date().toISOString(),
-          CreatedAt: u.CreatedAt || new Date().toISOString(),
-          lastLogin: u.LastLogin || new Date().toISOString(),
-          LastLogin: u.LastLogin || new Date().toISOString(),
+          districtId: u.DistrictID || null,
+          DistrictID: u.DistrictID || null,
+          position: u.Position || '',
+          Position: u.Position || '',
+          isActive: u.IsActive !== false,
+          IsActive: u.IsActive !== false,
+          createdAt: u.CreatedAt || safeNow,
+          CreatedAt: u.CreatedAt || safeNow,
+          lastLogin: u.LastLogin || safeNow,
+          LastLogin: u.LastLogin || safeNow,
           password: u.Password || 'CoopBank@2026',
           Password: u.Password || 'CoopBank@2026',
-        }, { merge: true }).catch(console.error);
+        }), { merge: true }).catch(console.error);
       }
 
       return true;
@@ -124,7 +155,7 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
     // Seed Districts
     for (const d of INITIAL_DISTRICTS) {
       const dDoc = doc(db, COLLECTIONS.DISTRICTS, d.DistrictID);
-      const data = {
+      const data = cleanFirestoreData({
         districtId: d.DistrictID,
         DistrictID: d.DistrictID,
         districtCode: d.DistrictCode,
@@ -137,9 +168,9 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
         OfficeLocation: d.OfficeLocation,
         isActive: d.IsActive,
         IsActive: d.IsActive,
-        directorName: d.DirectorName,
-        DirectorName: d.DirectorName,
-      };
+        directorName: d.DirectorName || '',
+        DirectorName: d.DirectorName || '',
+      });
       await setDoc(dDoc, data).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `${COLLECTIONS.DISTRICTS}/${d.DistrictID}`)
       );
@@ -148,7 +179,8 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
     // Seed Users
     for (const u of INITIAL_USERS) {
       const uDoc = doc(db, COLLECTIONS.USERS, u.UserID);
-      const data = {
+      const safeNow = new Date().toISOString();
+      const data = cleanFirestoreData({
         userId: u.UserID,
         UserID: u.UserID,
         email: u.Email,
@@ -157,17 +189,19 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
         FullName: u.FullName,
         role: u.Role,
         Role: u.Role,
-        districtId: u.DistrictID || '',
-        DistrictID: u.DistrictID,
-        position: u.Position,
-        Position: u.Position,
-        isActive: u.IsActive,
-        IsActive: u.IsActive,
-        createdAt: u.CreatedAt,
-        CreatedAt: u.CreatedAt,
-        lastLogin: u.LastLogin || new Date().toISOString(),
-        LastLogin: u.LastLogin,
-      };
+        districtId: u.DistrictID || null,
+        DistrictID: u.DistrictID || null,
+        position: u.Position || '',
+        Position: u.Position || '',
+        isActive: u.IsActive !== false,
+        IsActive: u.IsActive !== false,
+        createdAt: u.CreatedAt || safeNow,
+        CreatedAt: u.CreatedAt || safeNow,
+        lastLogin: u.LastLogin || safeNow,
+        LastLogin: u.LastLogin || safeNow,
+        password: u.Password || 'CoopBank@2026',
+        Password: u.Password || 'CoopBank@2026',
+      });
       await setDoc(uDoc, data).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `${COLLECTIONS.USERS}/${u.UserID}`)
       );
@@ -244,7 +278,7 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
         updatedAt: r.UpdatedAt,
         UpdatedAt: r.UpdatedAt,
       };
-      await setDoc(rDoc, data).catch((err) =>
+      await setDoc(rDoc, cleanFirestoreData(data)).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `${COLLECTIONS.REPORTS}/${r.ReportID}`)
       );
 
@@ -271,7 +305,7 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
             DocumentCategory: att.DocumentCategory,
             url: att.Url || '',
           };
-          await setDoc(attDoc, attData).catch((err) =>
+          await setDoc(attDoc, cleanFirestoreData(attData)).catch((err) =>
             handleFirestoreError(err, OperationType.WRITE, `${COLLECTIONS.ATTACHMENTS}/${att.AttachmentID}`)
           );
         }
@@ -301,7 +335,7 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
         reasonForChange: a.ReasonForChange,
         ReasonForChange: a.ReasonForChange,
       };
-      await setDoc(aDoc, data).catch((err) =>
+      await setDoc(aDoc, cleanFirestoreData(data)).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `${COLLECTIONS.AUDIT_LOG}/${a.AuditID}`)
       );
     }
@@ -500,7 +534,7 @@ export async function saveReportToFirestore(
   };
 
   try {
-    await setDoc(doc(db, COLLECTIONS.REPORTS, report.ReportID), reportData);
+    await setDoc(doc(db, COLLECTIONS.REPORTS, report.ReportID), cleanFirestoreData(reportData));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -510,7 +544,7 @@ export async function saveReportToFirestore(
     for (const att of report.Attachments) {
       const attPath = `${COLLECTIONS.ATTACHMENTS}/${att.AttachmentID}`;
       try {
-        await setDoc(doc(db, COLLECTIONS.ATTACHMENTS, att.AttachmentID), {
+        await setDoc(doc(db, COLLECTIONS.ATTACHMENTS, att.AttachmentID), cleanFirestoreData({
           attachmentId: att.AttachmentID,
           AttachmentID: att.AttachmentID,
           reportId: report.ReportID,
@@ -528,7 +562,7 @@ export async function saveReportToFirestore(
           documentCategory: att.DocumentCategory,
           DocumentCategory: att.DocumentCategory,
           url: att.Url || '',
-        });
+        }));
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, attPath);
       }
@@ -539,7 +573,7 @@ export async function saveReportToFirestore(
   const auditId = `AUD-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const auditPath = `${COLLECTIONS.AUDIT_LOG}/${auditId}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.AUDIT_LOG, auditId), {
+    await setDoc(doc(db, COLLECTIONS.AUDIT_LOG, auditId), cleanFirestoreData({
       auditId,
       AuditID: auditId,
       userEmail: actorEmail,
@@ -558,7 +592,7 @@ export async function saveReportToFirestore(
       ChangeSummary: `${isNew ? 'Created' : 'Updated'} report for ${report.EmployeeName} (${report.EmployeeID}) with status ${report.ReportStatus}`,
       reasonForChange: report.ReportStatus === 'Draft' ? 'Draft authoring' : 'Filing of authorized disciplinary action by District Director',
       ReasonForChange: report.ReportStatus === 'Draft' ? 'Draft authoring' : 'Filing of authorized disciplinary action by District Director',
-    });
+    }));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, auditPath);
   }
@@ -580,7 +614,7 @@ export async function addReportReviewToFirestore(
 
   // 1. Write review doc to ReportReviews
   try {
-    await setDoc(doc(db, COLLECTIONS.REVIEWS, reviewId), {
+    await setDoc(doc(db, COLLECTIONS.REVIEWS, reviewId), cleanFirestoreData({
       reviewId,
       ReviewID: reviewId,
       reportId,
@@ -595,7 +629,7 @@ export async function addReportReviewToFirestore(
       Comments: comments,
       createdAt: now,
       CreatedAt: now,
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, revPath);
   }
@@ -663,7 +697,7 @@ export function subscribeDistricts(
 export async function saveDistrictToFirestore(district: District, actorEmail: string, actorName: string): Promise<void> {
   const path = `${COLLECTIONS.DISTRICTS}/${district.DistrictID}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.DISTRICTS, district.DistrictID), {
+    await setDoc(doc(db, COLLECTIONS.DISTRICTS, district.DistrictID), cleanFirestoreData({
       districtId: district.DistrictID,
       DistrictID: district.DistrictID,
       districtCode: district.DistrictCode,
@@ -676,9 +710,9 @@ export async function saveDistrictToFirestore(district: District, actorEmail: st
       OfficeLocation: district.OfficeLocation,
       isActive: district.IsActive,
       IsActive: district.IsActive,
-      directorName: district.DirectorName,
-      DirectorName: district.DirectorName,
-    });
+      directorName: district.DirectorName || '',
+      DirectorName: district.DirectorName || '',
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -815,8 +849,10 @@ export async function saveUserToFirestore(
 ): Promise<void> {
   const path = `${COLLECTIONS.USERS}/${user.UserID}`;
   const now = new Date().toISOString();
+  const safeEmail = (user.Email || '').toLowerCase().trim();
+  const isNaol = safeEmail === 'naolcbo@gmail.com';
 
-  const userDocPayload = {
+  const userDocPayload = cleanFirestoreData({
     userId: user.UserID,
     UserID: user.UserID,
     employeeId: user.EmployeeID || '',
@@ -825,16 +861,16 @@ export async function saveUserToFirestore(
     Email: user.Email,
     fullName: user.FullName,
     FullName: user.FullName,
-    role: user.Role,
-    Role: user.Role,
-    districtId: user.DistrictID || '',
-    DistrictID: user.DistrictID,
-    department: user.Department || 'General Banking',
-    Department: user.Department || 'General Banking',
-    position: user.Position,
-    Position: user.Position,
-    isActive: user.IsActive,
-    IsActive: user.IsActive,
+    role: isNaol ? 'ADMIN' : user.Role,
+    Role: isNaol ? 'ADMIN' : user.Role,
+    districtId: isNaol ? null : (user.DistrictID || null),
+    DistrictID: isNaol ? null : (user.DistrictID || null),
+    department: user.Department || (isNaol ? 'HR Operations & System Administration' : 'General Banking'),
+    Department: user.Department || (isNaol ? 'HR Operations & System Administration' : 'General Banking'),
+    position: user.Position || (isNaol ? 'Lead HR Enterprise Administrator' : ''),
+    Position: user.Position || (isNaol ? 'Lead HR Enterprise Administrator' : ''),
+    isActive: user.IsActive !== false,
+    IsActive: user.IsActive !== false,
     createdAt: user.CreatedAt || now,
     CreatedAt: user.CreatedAt || now,
     updatedAt: now,
@@ -844,7 +880,7 @@ export async function saveUserToFirestore(
     updatedBy: actorEmail,
     UpdatedBy: actorEmail,
     lastLogin: user.LastLogin || now,
-    LastLogin: user.LastLogin,
+    LastLogin: user.LastLogin || now,
     roleHistory: user.RoleHistory || [],
     RoleHistory: user.RoleHistory || [],
     loginHistory: user.LoginHistory || [],
@@ -859,7 +895,7 @@ export async function saveUserToFirestore(
     ActivationCode: user.ActivationCode || '',
     lastPasswordReset: user.LastPasswordReset || '',
     LastPasswordReset: user.LastPasswordReset || '',
-  };
+  });
 
   try {
     await setDoc(doc(db, COLLECTIONS.USERS, user.UserID), userDocPayload, { merge: true });
@@ -871,7 +907,7 @@ export async function saveUserToFirestore(
   const auditId = `AUD-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const auditPath = `${COLLECTIONS.AUDIT_LOG}/${auditId}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.AUDIT_LOG, auditId), {
+    await setDoc(doc(db, COLLECTIONS.AUDIT_LOG, auditId), cleanFirestoreData({
       auditId,
       AuditID: auditId,
       userEmail: actorEmail,
@@ -890,7 +926,7 @@ export async function saveUserToFirestore(
       ChangeSummary: `Admin ${actorName} (${actorEmail}) updated profile for ${user.FullName} (${user.Email}) - Role: ${user.Role}, Status: ${user.IsActive ? 'Active' : 'Inactive'}, District: ${user.DistrictID || 'Cross-District'}`,
       reasonForChange: roleChangeReason || 'Enterprise user role and jurisdiction maintenance.',
       ReasonForChange: roleChangeReason || 'Enterprise user role and jurisdiction maintenance.',
-    });
+    }));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, auditPath);
   }
@@ -960,7 +996,7 @@ export function subscribeAuditLogs(
 export async function addAuditLogToFirestore(entry: AuditLogEntry): Promise<void> {
   const path = `${COLLECTIONS.AUDIT_LOG}/${entry.AuditID}`;
   try {
-    await setDoc(doc(db, COLLECTIONS.AUDIT_LOG, entry.AuditID), {
+    await setDoc(doc(db, COLLECTIONS.AUDIT_LOG, entry.AuditID), cleanFirestoreData({
       auditId: entry.AuditID,
       AuditID: entry.AuditID,
       userEmail: entry.UserEmail,
@@ -979,7 +1015,7 @@ export async function addAuditLogToFirestore(entry: AuditLogEntry): Promise<void
       ChangeSummary: entry.ChangeSummary,
       reasonForChange: entry.ReasonForChange,
       ReasonForChange: entry.ReasonForChange,
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

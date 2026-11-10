@@ -28,6 +28,7 @@ import {
 
 interface AdminDashboardProps {
   currentUser?: User;
+  isAuthorizedAdmin?: boolean;
   initialTab?: 'users' | 'districts' | 'settings';
   users: User[];
   districts: District[];
@@ -39,6 +40,7 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser,
+  isAuthorizedAdmin,
   initialTab = 'users',
   users,
   districts,
@@ -48,7 +50,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onSendPasswordReset,
 }) => {
   // STRICT SECURITY GATE: Only the ADMIN role (System Administrator) is authorized for User Provisioning and RBAC control
-  const isAdmin = currentUser?.Role === 'ADMIN';
+  const isAdmin = Boolean(currentUser?.Role === 'ADMIN' || isAuthorizedAdmin);
   const defaultTab = isAdmin ? initialTab : 'districts';
   const [activeTab, setActiveTab] = useState<'users' | 'districts' | 'settings'>(defaultTab);
 

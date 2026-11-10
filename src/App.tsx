@@ -238,9 +238,9 @@ export default function App() {
                   Position: 'Lead HR Enterprise Administrator',
                   IsActive: true,
                   CreatedAt: new Date().toISOString(),
+                  LastLogin: new Date().toISOString(),
                 };
               }
-              saveUserToFirestore(liveUser, 'naolcbo@gmail.com', liveUser.FullName);
             }
 
             if (liveUser) {
@@ -958,7 +958,10 @@ export default function App() {
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
-    const isCallerAdmin = currentUser?.Role === 'ADMIN' || sessionAdminUser?.Role === 'ADMIN';
+    const callerEmail = (currentUser?.Email || firebaseUser?.email || '').toLowerCase().trim();
+    const isAdminEmail = ['naolcbo@gmail.com', 'bighabes@gmail.com', 'milkinaol31@gmail.com', 'admin@coopbank.com'].includes(callerEmail);
+    const isCallerAdmin = currentUser?.Role === 'ADMIN' || sessionAdminUser?.Role === 'ADMIN' || activeUser?.Role === 'ADMIN' || isAdminEmail;
+
     if (!isCallerAdmin) {
       setNotification({
         type: 'error',
@@ -966,13 +969,33 @@ export default function App() {
       });
       return;
     }
-    const userEmail = currentUser?.Email || 'admin@coopbank.com';
-    const userName = currentUser?.FullName || 'Administrator';
-    const updatedUsersList = users.map((u) => (u.UserID === updatedUser.UserID || u.Email.toLowerCase() === updatedUser.Email.toLowerCase() ? updatedUser : u));
+
+    const userEmail = currentUser?.Email || firebaseUser?.email || 'admin@coopbank.com';
+    const userName = currentUser?.FullName || firebaseUser?.displayName || 'Administrator';
+
+    const updatedUsersList = users.map((u) => {
+      const matchId = u.UserID === updatedUser.UserID;
+      const matchEmail = u.Email && updatedUser.Email && u.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim();
+      return (matchId || matchEmail) ? updatedUser : u;
+    });
     persistUsers(updatedUsersList);
 
     // If updating the active user session or testing persona, immediately sync state and update tab access
-    if (currentUser && (currentUser.UserID === updatedUser.UserID || currentUser.Email?.toLowerCase().trim() === updatedUser.Email?.toLowerCase().trim())) {
+    const isTargetCurrentUser = Boolean(currentUser && (
+      currentUser.UserID === updatedUser.UserID ||
+      (currentUser.Email && updatedUser.Email && currentUser.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim())
+    ));
+
+    if (isTargetCurrentUser && currentUser) {
+      // Preserve sessionAdminUser if the current user was an Admin so they don't lose admin control
+      if ((currentUser.Role === 'ADMIN' || isCallerAdmin) && !sessionAdminUser) {
+        setSessionAdminUser(currentUser.Role === 'ADMIN' ? currentUser : {
+          ...currentUser,
+          Role: 'ADMIN',
+          Position: 'Enterprise System Administrator',
+          DistrictID: null,
+        });
+      }
       setCurrentUser(updatedUser);
       saveStoredAuthSession(updatedUser);
       const allowed = getAllowedTabsForRole(updatedUser.Role);
@@ -981,7 +1004,13 @@ export default function App() {
         setActiveTab(def.defaultTab || 'dashboard');
       }
     }
-    if (sessionPersonaUser && (sessionPersonaUser.UserID === updatedUser.UserID || sessionPersonaUser.Email?.toLowerCase().trim() === updatedUser.Email?.toLowerCase().trim())) {
+
+    const isTargetPersona = Boolean(sessionPersonaUser && (
+      sessionPersonaUser.UserID === updatedUser.UserID ||
+      (sessionPersonaUser.Email && updatedUser.Email && sessionPersonaUser.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim())
+    ));
+
+    if (isTargetPersona) {
       setSessionPersonaUser(updatedUser);
       const allowed = getAllowedTabsForRole(updatedUser.Role);
       if (!allowed.includes(activeTab)) {
@@ -1112,7 +1141,9 @@ export default function App() {
 
   const isAuthorizedAdmin = Boolean(
     activeUser.Role === 'ADMIN' ||
-    sessionAdminUser?.Role === 'ADMIN'
+    sessionAdminUser?.Role === 'ADMIN' ||
+    currentUser?.Role === 'ADMIN' ||
+    ['naolcbo@gmail.com', 'bighabes@gmail.com', 'milkinaol31@gmail.com', 'admin@coopbank.com'].includes(authEmail)
   );
 
   const isRegisteredUser = Boolean(
@@ -1184,8 +1215,8 @@ export default function App() {
         unsyncedCount={offlineQueue.length}
         onOpenGuide={() => setIsGuideOpen(true)}
         onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
-        canSwitchUser={activeUser.Role === 'ADMIN'}
-        isProxyActive={Boolean(sessionPersonaUser && sessionAdminUser?.Role === 'ADMIN')}
+        canSwitchUser={Boolean(isAuthorizedAdmin && activeUser.Role === 'ADMIN' && !sessionPersonaUser)}
+        isProxyActive={Boolean(sessionPersonaUser && isAuthorizedAdmin)}
         onExitProxy={handleExitProxy}
         onSignOut={handleSignOut}
         onOpenSecuritySettings={() => setIsSecurityModalOpen(true)}
@@ -1558,9 +1589,10 @@ export default function App() {
 
             {/* Tab: User Management (Admin only) */}
             {activeTab === 'users' && (
-              activeUser.Role === 'ADMIN' ? (
+              isAuthorizedAdmin ? (
                 <AdminDashboard
                   currentUser={activeUser}
+                  isAuthorizedAdmin={isAuthorizedAdmin}
                   initialTab="users"
                   users={users}
                   districts={districts}
