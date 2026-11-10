@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authorized bank HR officer, Head Office manager, or administrator profile",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "fullName": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["DISTRICT_HR", "HO_MANAGER", "ADMIN"] },
+        "districtId": { "type": "string", "maxLength": 64 },
+        "position": { "type": "string", "maxLength": 128 },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "lastLogin": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "email", "fullName", "role", "isActive"]
+    },
+    "District": {
+      "title": "District",
+      "description": "Bank operating district and governance jurisdiction",
+      "type": "object",
+      "properties": {
+        "districtId": { "type": "string", "maxLength": 64 },
+        "districtCode": { "type": "string", "maxLength": 32 },
+        "districtName": { "type": "string", "maxLength": 128 },
+        "region": { "type": "string", "maxLength": 64 },
+        "officeLocation": { "type": "string", "maxLength": 256 },
+        "isActive": { "type": "boolean" },
+        "directorName": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["districtId", "districtCode", "districtName", "region", "isActive"]
+    },
+    "DisciplinaryReport": {
+      "title": "DisciplinaryReport",
+      "description": "Formal employee performance disciplinary action filing and audit record",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string", "maxLength": 64 },
+        "employeeId": { "type": "string", "maxLength": 64 },
+        "employeeName": { "type": "string", "maxLength": 128 },
+        "jobTitle": { "type": "string", "maxLength": 128 },
+        "workUnit": { "type": "string", "maxLength": 128 },
+        "districtId": { "type": "string", "maxLength": 64 },
+        "incidentDate": { "type": "string", "maxLength": 32 },
+        "actionDate": { "type": "string", "maxLength": 32 },
+        "actionType": { "type": "string", "maxLength": 64 },
+        "issueDescription": { "type": "string", "maxLength": 4000 },
+        "policyReference": { "type": "string", "maxLength": 1000 },
+        "summaryOfFindings": { "type": "string", "maxLength": 4000 },
+        "actionTaken": { "type": "string", "maxLength": 2000 },
+        "directorDecisionDate": { "type": "string", "maxLength": 32 },
+        "authorizedOfficialName": { "type": "string", "maxLength": 128 },
+        "correctiveAction": { "type": "string", "maxLength": 2000 },
+        "followUpRequired": { "type": "boolean" },
+        "followUpDeadline": { "type": "string", "maxLength": 32 },
+        "followUpStatus": { "type": "string", "maxLength": 64 },
+        "reportingPeriod": { "type": "string", "maxLength": 32 },
+        "submittedBy": { "type": "string", "maxLength": 256 },
+        "submitterName": { "type": "string", "maxLength": 128 },
+        "submittedAt": { "type": "string", "maxLength": 64 },
+        "reportStatus": { "type": "string", "maxLength": 64 },
+        "reviewedBy": { "type": "string", "maxLength": 256 },
+        "reviewerName": { "type": "string", "maxLength": 128 },
+        "reviewedAt": { "type": "string", "maxLength": 64 },
+        "reviewComments": { "type": "string", "maxLength": 4000 },
+        "correctionNotes": { "type": "string", "maxLength": 4000 },
+        "attachments": { "type": "array" },
+        "auditTrail": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["reportId", "employeeId", "employeeName", "districtId", "actionType", "reportStatus", "submittedBy"]
+    },
+    "ReportReview": {
+      "title": "ReportReview",
+      "description": "Head Office review and endorsement audit entry",
+      "type": "object",
+      "properties": {
+        "reviewId": { "type": "string", "maxLength": 64 },
+        "reportId": { "type": "string", "maxLength": 64 },
+        "reviewerEmail": { "type": "string", "maxLength": 256 },
+        "reviewerName": { "type": "string", "maxLength": 128 },
+        "reviewDecision": { "type": "string", "enum": ["Reviewed", "Correction Requested", "Closed"] },
+        "comments": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["reviewId", "reportId", "reviewerEmail", "reviewDecision", "createdAt"]
+    },
+    "ReportAttachment": {
+      "title": "ReportAttachment",
+      "description": "Metadata for evidentiary document or approval order attached to a disciplinary report",
+      "type": "object",
+      "properties": {
+        "attachmentId": { "type": "string", "maxLength": 64 },
+        "reportId": { "type": "string", "maxLength": 64 },
+        "fileName": { "type": "string", "maxLength": 256 },
+        "fileSize": { "type": "string", "maxLength": 64 },
+        "fileType": { "type": "string", "maxLength": 128 },
+        "uploadedBy": { "type": "string", "maxLength": 256 },
+        "uploadedAt": { "type": "string", "maxLength": 64 },
+        "documentCategory": { "type": "string", "maxLength": 128 },
+        "url": { "type": "string", "maxLength": 1024 }
+      },
+      "required": ["attachmentId", "reportId", "fileName", "uploadedBy", "uploadedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable bank compliance log record tracking all disciplinary modifications and review actions",
+      "type": "object",
+      "properties": {
+        "auditId": { "type": "string", "maxLength": 64 },
+        "userEmail": { "type": "string", "maxLength": 256 },
+        "userName": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 64 },
+        "entityType": { "type": "string", "enum": ["Report", "User", "District", "System"] },
+        "entityId": { "type": "string", "maxLength": 64 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "changeSummary": { "type": "string", "maxLength": 2000 },
+        "reasonForChange": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["auditId", "userEmail", "action", "entityType", "entityId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/Users/{userId}": {
+      "schema": "User",
+      "description": "Bank user directory with role-based access attributes"
+    },
+    "/Districts/{districtId}": {
+      "schema": "District",
+      "description": "Regional bank districts and director contact records"
+    },
+    "/DisciplinaryReports/{reportId}": {
+      "schema": "DisciplinaryReport",
+      "description": "Master repository of employee disciplinary action reports"
+    },
+    "/ReportReviews/{reviewId}": {
+      "schema": "ReportReview",
+      "description": "Endorsements and correction requests issued by Head Office managers"
+    },
+    "/ReportAttachments/{attachmentId}": {
+      "schema": "ReportAttachment",
+      "description": "Catalog of attached formal notices, hearing minutes, and director orders"
+    },
+    "/AuditLog/{auditId}": {
+      "schema": "AuditLog",
+      "description": "Tamper-evident audit trail of system modifications and administrative actions"
+    }
+  }
+}

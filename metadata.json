@@ -1,0 +1,8 @@
+{
+  "name": "Coop Bank Performance Action Management System",
+  "description": "Multi-district Employee Performance Disciplinary Action Reporting System for 13 districts and Head Office HR with offline mode, role-based security, automated review workflows, and instant offline synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

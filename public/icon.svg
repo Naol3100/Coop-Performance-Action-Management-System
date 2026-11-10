@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bankGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="50%" stop-color="#1e40af"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="shieldAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bankGrad)"/>
+  
+  <!-- Outer Shield Trim -->
+  <path d="M256 64 L416 128 V256 C416 352 344 424 256 448 C168 424 96 352 96 256 V128 Z" 
+        fill="none" stroke="url(#shieldAccent)" stroke-width="16" stroke-linejoin="round"/>
+        
+  <!-- Bank Pillar Columns -->
+  <!-- Roof / Pediment -->
+  <polygon points="256,150 170,195 342,195" fill="#f8fafc"/>
+  <rect x="160" y="200" width="192" height="12" rx="4" fill="#f8fafc"/>
+  <!-- 4 Columns -->
+  <rect x="180" y="222" width="18" height="96" rx="4" fill="#93c5fd"/>
+  <rect x="222" y="222" width="18" height="96" rx="4" fill="#93c5fd"/>
+  <rect x="272" y="222" width="18" height="96" rx="4" fill="#93c5fd"/>
+  <rect x="314" y="222" width="18" height="96" rx="4" fill="#93c5fd"/>
+  <!-- Base -->
+  <rect x="160" y="326" width="192" height="16" rx="4" fill="#f8fafc"/>
+  <rect x="146" y="346" width="220" height="12" rx="4" fill="#cbd5e1"/>
+  
+  <!-- Verified Badge Overlay -->
+  <circle cx="340" cy="350" r="38" fill="#10b981"/>
+  <path d="M324 350 L336 362 L358 340" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
