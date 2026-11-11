@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DisciplinaryReport, District } from '../types';
+import { DisciplinaryTrendsChart } from './DisciplinaryTrendsChart';
 import {
   Building2,
   CheckCircle2,
@@ -194,6 +195,13 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
           <div className="text-[11px] text-purple-600 dark:text-purple-400 mt-1">PIPs & deadlines active</div>
         </div>
       </div>
+
+      {/* Recharts Disciplinary Report Trends by District and Case Type Component */}
+      <DisciplinaryTrendsChart
+        reports={filteredReports}
+        districts={districts}
+        onSelectDistrict={onFilterByDistrict}
+      />
 
       {/* Main Grid: 13-Districts Volume Comparison & Action Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -59,6 +59,7 @@ import {
 import { ReportDetailModal } from './components/ReportDetailModal';
 import { OfficialPrintDocument } from './components/OfficialPrintDocument';
 import { AdminDashboard } from './components/AdminDashboard';
+import { AdminBulkExportHub } from './components/AdminBulkExportHub';
 import { AuditLogView } from './components/AuditLogView';
 import { OfflineSyncCenter } from './components/OfflineSyncCenter';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -981,10 +982,12 @@ export default function App() {
     persistUsers(updatedUsersList);
 
     // If updating the active user session or testing persona, immediately sync state and update tab access
-    const isTargetCurrentUser = Boolean(currentUser && (
-      currentUser.UserID === updatedUser.UserID ||
-      (currentUser.Email && updatedUser.Email && currentUser.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim())
-    ));
+    const activeEmail = (currentUser?.Email || firebaseUser?.email || '').toLowerCase().trim();
+    const isTargetCurrentUser = Boolean(
+      (currentUser && currentUser.UserID === updatedUser.UserID) ||
+      (activeEmail && updatedUser.Email && activeEmail === updatedUser.Email.toLowerCase().trim()) ||
+      (currentUser?.Email && updatedUser.Email && currentUser.Email.toLowerCase().trim() === updatedUser.Email.toLowerCase().trim())
+    );
 
     if (isTargetCurrentUser && currentUser) {
       // Preserve sessionAdminUser if the current user was an Admin so they don't lose admin control
@@ -1571,6 +1574,18 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Administrator Date-Filtered Bulk CSV Extraction Hub */}
+                {isAuthorizedAdmin && (
+                  <AdminBulkExportHub
+                    currentUser={activeUser}
+                    users={users}
+                    districts={districts}
+                    reports={reports}
+                    auditLogs={auditLogs}
+                    onLogAudit={(entry) => persistAuditLogs([entry, ...auditLogs])}
+                  />
+                )}
+
                 {/* Embedded table */}
                 <ReportList
                   currentUser={activeUser}
@@ -1596,6 +1611,9 @@ export default function App() {
                   initialTab="users"
                   users={users}
                   districts={districts}
+                  reports={reports}
+                  auditLogs={auditLogs}
+                  onLogAudit={(entry) => persistAuditLogs([entry, ...auditLogs])}
                   onUpdateUser={handleUpdateUser}
                   onCreateUser={handleCreateUser}
                   onUpdateDistrict={handleUpdateDistrict}
@@ -1620,6 +1638,9 @@ export default function App() {
                   initialTab="districts"
                   users={users}
                   districts={districts}
+                  reports={reports}
+                  auditLogs={auditLogs}
+                  onLogAudit={(entry) => persistAuditLogs([entry, ...auditLogs])}
                   onUpdateUser={handleUpdateUser}
                   onCreateUser={handleCreateUser}
                   onUpdateDistrict={handleUpdateDistrict}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { DisciplinaryReport, District, User } from '../types';
+import { DisciplinaryTrendsChart } from './DisciplinaryTrendsChart';
 import {
   FileText,
   Clock,
@@ -167,6 +168,14 @@ export const DistrictDashboard: React.FC<DistrictDashboardProps> = ({
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Finalized & cleared</div>
         </div>
       </div>
+
+      {/* Disciplinary Report Trends by District and Case Type Component */}
+      <DisciplinaryTrendsChart
+        reports={districtReports}
+        districts={currentDistrict ? [currentDistrict] : []}
+        title={`${currentDistrict?.DistrictName || 'District'} Disciplinary Breakdown`}
+        subtitle="Visual distribution of case types, sanctions, and resolution trajectory within this district."
+      />
 
       {/* Two column grid: Follow-up Action Tracker & Recent District Reports */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

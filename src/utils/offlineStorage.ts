@@ -120,10 +120,20 @@ export function loadStoredUsers(): User[] {
     if (raw) {
       let parsed: User[] = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const deduped = deduplicateUsers(parsed);
-        if (deduped.length !== parsed.length) {
-          saveStoredUsers(deduped);
+        // Merge existing localStorage users with INITIAL_USERS so new official bank roster personnel are always included
+        const combined = [...parsed];
+        for (const initU of INITIAL_USERS) {
+          const exists = combined.some(
+            (u) =>
+              u.UserID === initU.UserID ||
+              (u.Email && initU.Email && u.Email.toLowerCase().trim() === initU.Email.toLowerCase().trim())
+          );
+          if (!exists) {
+            combined.push(initU);
+          }
         }
+        const deduped = deduplicateUsers(combined);
+        saveStoredUsers(deduped);
         return deduped;
       }
     }

@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { User, District, UserRole, RoleChangeRecord } from '../types';
-import { getRoleDefinition, ALL_ROLES, ROLE_DEFINITIONS, hasPermission } from '../rbac/rbacPolicy';
+import { User, District, UserRole, RoleChangeRecord, DisciplinaryReport, AuditLogEntry } from '../types';
+import {
+  getRoleDefinition,
+  ALL_ROLES,
+  ROLE_DEFINITIONS,
+  hasPermission,
+  OFFICIAL_JOB_TITLES,
+  mapJobTitleToRole,
+  getJobTitleDetails,
+  JobTitleMapping,
+} from '../rbac/rbacPolicy';
+import { INITIAL_USERS } from '../data/mockData';
 import { UserRbacModal } from './UserRbacModal';
+import { AdminBulkExportHub } from './AdminBulkExportHub';
 import {
   Users,
   ShieldAlert,
@@ -24,14 +35,26 @@ import {
   Briefcase,
   Layers,
   Fingerprint,
+  FileSpreadsheet,
+  Sparkles,
+  UserCheck,
+  ChevronDown,
+  Search,
+  Check,
+  Shield,
+  Download,
+  ArrowDownToLine,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   currentUser?: User;
   isAuthorizedAdmin?: boolean;
-  initialTab?: 'users' | 'districts' | 'settings';
+  initialTab?: 'users' | 'districts' | 'exports' | 'settings';
   users: User[];
   districts: District[];
+  reports?: DisciplinaryReport[];
+  auditLogs?: AuditLogEntry[];
+  onLogAudit?: (entry: AuditLogEntry) => void;
   onUpdateUser: (updatedUser: User) => void;
   onCreateUser: (newUser: User) => void;
   onUpdateDistrict: (updatedDistrict: District) => void;
@@ -44,6 +67,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialTab = 'users',
   users,
   districts,
+  reports = [],
+  auditLogs = [],
+  onLogAudit,
   onUpdateUser,
   onCreateUser,
   onUpdateDistrict,
@@ -52,7 +78,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // STRICT SECURITY GATE: Only the ADMIN role (System Administrator) is authorized for User Provisioning and RBAC control
   const isAdmin = Boolean(currentUser?.Role === 'ADMIN' || isAuthorizedAdmin);
   const defaultTab = isAdmin ? initialTab : 'districts';
-  const [activeTab, setActiveTab] = useState<'users' | 'districts' | 'settings'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'users' | 'districts' | 'exports' | 'settings'>(defaultTab);
 
   useEffect(() => {
     if (!isAdmin && activeTab !== 'districts') {
@@ -68,14 +94,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [roleChangeReasonInput, setRoleChangeReasonInput] = useState<string>('');
   const [inspectingRbacUser, setInspectingRbacUser] = useState<User | null>(null);
+  const [isTitleDropdownOpen, setIsTitleDropdownOpen] = useState(false);
+  const [titleSearchQuery, setTitleSearchQuery] = useState('');
   const [userFormData, setUserFormData] = useState<Partial<User>>({
     FullName: '',
     Email: '',
     EmployeeID: '',
-    Department: 'General Banking',
+    Department: 'District Human Capital Operations',
     Role: 'DISTRICT_HR',
     DistrictID: 'DIST-01',
-    Position: '',
+    Position: 'Human Capital Business Partner (HCBP)',
     IsActive: true,
   });
 
@@ -92,14 +120,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [designationFilter, setDesignationFilter] = useState<'ALL' | 'HCBP' | 'EPM' | 'ADMIN' | 'OTHER'>('ALL');
+  const [isSyncingRoster, setIsSyncingRoster] = useState(false);
 
   const activeUsersCount = users.filter(u => u.IsActive).length;
   const districtHROfficersCount = users.filter(u => u.Role === 'DISTRICT_HR').length;
   const hoManagersCount = users.filter(u => u.Role === 'HO_MANAGER').length;
   const adminsCount = users.filter(u => u.Role === 'ADMIN').length;
   const auditorsAndDirectorsCount = users.filter(u => u.Role === 'AUDITOR' || u.Role === 'DIRECTOR').length;
+  const hcbpCount = users.filter(u => u.Position?.includes('HCBP') || u.Position?.includes('Human Capital Business Partner')).length;
+  const epmCount = users.filter(u => u.Position?.includes('EPM') || u.Position?.includes('Employee Performance Management')).length;
 
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
+  const handleSyncOfficialRoster = async () => {
+    setIsSyncingRoster(true);
+    setActionSuccessMessage(null);
+    try {
+      let syncedCount = 0;
+      const now = new Date().toISOString();
+      for (const officialUser of INITIAL_USERS) {
+        const existing = users.find(
+          (u) =>
+            u.UserID === officialUser.UserID ||
+            (u.Email && officialUser.Email && u.Email.toLowerCase().trim() === officialUser.Email.toLowerCase().trim())
+        );
+
+        if (!existing) {
+          onCreateUser(officialUser);
+          syncedCount++;
+        } else {
+          // If existing user has mismatched position or district, align with official spreadsheet
+          const posChanged = existing.Position !== officialUser.Position;
+          const distChanged = existing.DistrictID !== officialUser.DistrictID;
+          const nameChanged = existing.FullName !== officialUser.FullName;
+          if (posChanged || distChanged || nameChanged) {
+            onUpdateUser({
+              ...existing,
+              FullName: officialUser.FullName,
+              Position: officialUser.Position,
+              DistrictID: officialUser.DistrictID,
+              Department: officialUser.Department,
+              UpdatedAt: now,
+              UpdatedBy: currentUser?.FullName || 'Enterprise Administrator',
+            });
+            syncedCount++;
+          }
+        }
+      }
+      setActionSuccessMessage(
+        `Official Staff Roster Synchronized: Verified all 21 District HR Personnel (HCBP & EPM Officers across all 13 Districts) + System Administrators in local state and Firestore directory!`
+      );
+    } finally {
+      setIsSyncingRoster(false);
+    }
+  };
 
   const getRoleLabel = (role?: UserRole) => {
     return getRoleDefinition(role).name;
@@ -113,17 +188,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setFormError(null);
     setActionSuccessMessage(null);
     setRoleChangeReasonInput('');
+    const defaultPosition = 'Human Capital Business Partner (HCBP)';
+    const defaultRole = mapJobTitleToRole(defaultPosition);
     setUserFormData({
       FullName: '',
       Email: '',
       EmployeeID: `EMP-${Math.floor(10000 + Math.random() * 90000)}`,
-      Department: 'District HR Operations',
-      Role: 'DISTRICT_HR',
+      Department: 'District Human Capital Operations',
+      Role: defaultRole,
       DistrictID: 'DIST-01',
-      Position: 'District HR Officer',
+      Position: defaultPosition,
       Password: 'CoopBank@2026',
       IsActive: true,
     });
+    setTitleSearchQuery('');
+    setIsTitleDropdownOpen(false);
     setIsCreatingUser(true);
   };
 
@@ -136,13 +215,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionSuccessMessage(null);
     setRoleChangeReasonInput('');
     setEditingUser(u);
-    setUserFormData({ ...u });
+    const pos = u.Position || getRoleDefinition(u.Role).name;
+    const mappedRole = mapJobTitleToRole(pos);
+    setUserFormData({
+      ...u,
+      Position: pos,
+      Role: mappedRole,
+      DistrictID: getRoleDefinition(mappedRole).isDistrictBound ? (u.DistrictID || 'DIST-01') : null,
+    });
+    setTitleSearchQuery('');
+    setIsTitleDropdownOpen(false);
   };
 
   const handleSaveUser = () => {
     setFormError(null);
     const cleanEmail = (userFormData.Email || '').trim().toLowerCase();
     const cleanName = (userFormData.FullName || '').trim();
+    const cleanPosition = (userFormData.Position || '').trim();
 
     if (!cleanName) {
       setFormError('Staff Full Name is required.');
@@ -154,33 +243,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    if (!cleanPosition) {
+      setFormError('Please select or specify a Job Title / Designation.');
+      return;
+    }
+
     if (!isAdmin) {
       setFormError('Access Denied: Only System Administrators are authorized to provision or modify user accounts.');
       return;
     }
 
-    const selectedRole: UserRole = userFormData.Role || 'DISTRICT_HR';
+    // Role, authority level, and access scope are centrally determined by Job Title / Designation
+    const selectedRole: UserRole = mapJobTitleToRole(cleanPosition);
     const roleDef = getRoleDefinition(selectedRole);
     const isDistrictBound = roleDef.isDistrictBound;
     const now = new Date().toISOString();
-
-    const defaultPos = selectedRole === 'ADMIN'
-      ? 'Enterprise System Administrator'
-      : selectedRole === 'HO_MANAGER'
-      ? 'Head Office HR Manager'
-      : selectedRole === 'HO_HR'
-      ? 'Head Office HR Specialist'
-      : selectedRole === 'DISTRICT_MANAGER'
-      ? 'District General Manager'
-      : selectedRole === 'BRANCH_MANAGER'
-      ? 'Branch Operations Manager'
-      : selectedRole === 'AUDITOR'
-      ? 'Internal Compliance Auditor'
-      : selectedRole === 'DIRECTOR'
-      ? 'Authorized District Director'
-      : selectedRole === 'EMPLOYEE'
-      ? 'Bank Staff'
-      : 'District HR Officer';
+    const titleDetails = getJobTitleDetails(cleanPosition);
 
     if (isCreatingUser) {
       const existing = users.find(u => u.Email.toLowerCase() === cleanEmail);
@@ -195,25 +273,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             userEmail: cleanEmail,
             previousRole: existing.Role,
             newRole: selectedRole,
-            changedByEmail: 'admin@coopbank.com',
-            changedByName: 'Enterprise Administrator',
+            changedByEmail: currentUser?.Email || 'admin@coopbank.com',
+            changedByName: currentUser?.FullName || 'Enterprise Administrator',
             changedAt: now,
-            reason: roleChangeReasonInput.trim() || `Reassigned role from ${getRoleDefinition(existing.Role).name} to ${roleDef.name}.`,
+            reason: roleChangeReasonInput.trim() || `Designation assigned to "${cleanPosition}" (Auto-assigned role: ${roleDef.name}).`,
           });
         }
 
         const updatedUser: User = {
           ...existing,
           EmployeeID: userFormData.EmployeeID?.trim() || existing.EmployeeID,
-          Department: userFormData.Department?.trim() || existing.Department || 'General Banking',
+          Department: userFormData.Department?.trim() || titleDetails.department || existing.Department || 'General Banking',
           FullName: cleanName,
           Email: cleanEmail,
           Role: selectedRole,
           DistrictID: isDistrictBound ? (userFormData.DistrictID || 'DIST-01') : null,
-          Position: userFormData.Position?.trim() || defaultPos,
+          Position: cleanPosition,
           IsActive: userFormData.IsActive ?? true,
           UpdatedAt: now,
-          UpdatedBy: 'Enterprise Administrator',
+          UpdatedBy: currentUser?.FullName || 'Enterprise Administrator',
           RoleHistory: roleHistory,
           ...(userFormData.Password?.trim() ? {
             Password: userFormData.Password.trim(),
@@ -225,7 +303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         onUpdateUser(updatedUser);
         setIsCreatingUser(false);
-        setActionSuccessMessage(`Account for "${cleanName}" (${cleanEmail}) has been updated with role "${roleDef.name}". They are authorized to log in immediately with their registered email.`);
+        setActionSuccessMessage(`Account for "${cleanName}" (${cleanEmail}) has been updated with designation "${cleanPosition}" and role "${roleDef.name}". Active immediately!`);
         return;
       }
 
@@ -258,22 +336,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         FullName: cleanName,
         Role: selectedRole,
         DistrictID: isDistrictBound ? (userFormData.DistrictID || 'DIST-01') : null,
-        Department: userFormData.Department?.trim() || 'General Banking Operations',
-        Position: userFormData.Position?.trim() || defaultPos,
+        Department: userFormData.Department?.trim() || titleDetails.department,
+        Position: cleanPosition,
         IsActive: userFormData.IsActive ?? true,
         Password: initialPassword,
         TemporaryPassword: initialPassword,
         MustChangePassword: initialPassword === 'CoopBank@2026',
         CreatedAt: now,
         UpdatedAt: now,
-        CreatedBy: 'Enterprise Administrator',
+        CreatedBy: currentUser?.FullName || 'Enterprise Administrator',
         RoleHistory: [],
         LoginHistory: [],
       };
 
       onCreateUser(newUser);
       setIsCreatingUser(false);
-      setActionSuccessMessage(`User "${cleanName}" (${cleanEmail}) successfully added with role "${roleDef.name}". They are now authorized to log in immediately with their registered email.`);
+      setActionSuccessMessage(`User "${cleanName}" (${cleanEmail}) successfully provisioned as "${cleanPosition}" (Role: ${roleDef.name}). Immediate access granted.`);
     } else if (editingUser) {
       const roleChanged = editingUser.Role !== selectedRole;
       let updatedRoleHistory = [...(editingUser.RoleHistory || [])];
@@ -285,10 +363,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           userEmail: cleanEmail,
           previousRole: editingUser.Role,
           newRole: selectedRole,
-          changedByEmail: 'admin@coopbank.com',
-          changedByName: 'Enterprise Administrator',
+          changedByEmail: currentUser?.Email || 'admin@coopbank.com',
+          changedByName: currentUser?.FullName || 'Enterprise Administrator',
           changedAt: now,
-          reason: roleChangeReasonInput.trim() || `Role reassignment from ${getRoleDefinition(editingUser.Role).name} to ${roleDef.name}.`,
+          reason: roleChangeReasonInput.trim() || `Assigned designation "${cleanPosition}" (Auto-assigned role: ${roleDef.name}).`,
         };
         updatedRoleHistory.unshift(historyRecord);
       }
@@ -296,15 +374,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const updatedUser: User = {
         ...editingUser,
         EmployeeID: userFormData.EmployeeID?.trim() || editingUser.EmployeeID,
-        Department: userFormData.Department?.trim() || editingUser.Department || 'General Banking Operations',
+        Department: userFormData.Department?.trim() || titleDetails.department || editingUser.Department || 'General Banking Operations',
         FullName: cleanName,
         Email: cleanEmail,
         Role: selectedRole,
         DistrictID: isDistrictBound ? (userFormData.DistrictID || editingUser.DistrictID || 'DIST-01') : null,
-        Position: userFormData.Position?.trim() || editingUser.Position || defaultPos,
+        Position: cleanPosition,
         IsActive: userFormData.IsActive ?? editingUser.IsActive,
         UpdatedAt: now,
-        UpdatedBy: 'Enterprise Administrator',
+        UpdatedBy: currentUser?.FullName || 'Enterprise Administrator',
         RoleHistory: updatedRoleHistory,
         ...(userFormData.Password?.trim() ? {
           Password: userFormData.Password.trim(),
@@ -315,7 +393,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       onUpdateUser(updatedUser);
       setEditingUser(null);
-      setActionSuccessMessage(`User "${cleanName}" (${cleanEmail}) account updated successfully to role "${roleDef.name}". Immediate role effect active!`);
+      setActionSuccessMessage(`User "${cleanName}" (${cleanEmail}) account updated successfully to designation "${cleanPosition}" (Role: "${roleDef.name}"). Immediate role effect active!`);
     }
   };
 
@@ -518,6 +596,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('exports')}
+            className={`pb-3 px-3 transition-colors flex items-center gap-1.5 ${
+              activeTab === 'exports'
+                ? 'border-b-2 border-purple-700 text-purple-700 dark:text-purple-400 font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+            <span>Bulk CSV Export Hub</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800">
+              Date Filtered
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('settings')}
             className={`pb-3 px-3 transition-colors flex items-center gap-1.5 ${
               activeTab === 'settings'
@@ -638,51 +731,93 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                     {users.length} Registered Accounts
                   </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                    {hcbpCount} HCBP
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800">
+                    {epmCount} EPM Officers
+                  </span>
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Only registered staff with <span className="font-semibold text-emerald-600 dark:text-emerald-400">Active</span> status can log in. Users toggled to <span className="font-semibold text-red-600 dark:text-red-400">Inactive</span> are immediately locked out in real-time.
+                  Official bank staff across all 13 districts. Only registered staff with <span className="font-semibold text-emerald-600 dark:text-emerald-400">Active</span> status can log in. Users toggled to <span className="font-semibold text-red-600 dark:text-red-400">Inactive</span> are immediately locked out in real-time.
                 </p>
               </div>
               {isAdmin && (
-                <button
-                  onClick={handleOpenCreateUser}
-                  className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 active:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center gap-2 transition shadow"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add / Provision New User</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setActiveTab('exports')}
+                    className="px-3 py-2 bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow"
+                    title="Bulk CSV Export for Historical Logs and User Management Reports filtered by date range"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Bulk CSV Exports</span>
+                  </button>
+                  <button
+                    onClick={handleSyncOfficialRoster}
+                    disabled={isSyncingRoster}
+                    className="px-3 py-2 bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 active:from-emerald-800 active:to-teal-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow disabled:opacity-50"
+                    title="Verify and synchronize all 21 District HR Personnel (HCBP & EPM Officers) from the official bank directory"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>{isSyncingRoster ? 'Syncing...' : 'Sync Official Staff Roster (21 Officers)'}</span>
+                  </button>
+                  <button
+                    onClick={handleOpenCreateUser}
+                    className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 active:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add / Provision User</span>
+                  </button>
+                </div>
               )}
             </div>
 
-            {/* Quick Search & Role Filter Bar */}
+            {/* Quick Search, Designation & Role Filter Bar */}
             <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex-1 min-w-[220px] max-w-md">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter users by name, email, district, or position..."
+                  placeholder="Search staff by name, email, district, HCBP, or EPM Officer..."
                   className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
 
-              <div className="flex items-center space-x-2">
-                <span className="text-slate-500 dark:text-slate-400 text-[11px] font-semibold">Filter Role:</span>
-                <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200"
-                >
-                  <option value="ALL">All Roles ({users.length})</option>
-                  {ALL_ROLES.map((role) => {
-                    const count = users.filter((u) => u.Role === role).length;
-                    return (
-                      <option key={role} value={role}>
-                        {getRoleDefinition(role).name} ({count})
-                      </option>
-                    );
-                  })}
-                </select>
+              <div className="flex items-center space-x-2 flex-wrap gap-y-1.5">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px] font-semibold">Designation:</span>
+                  <select
+                    value={designationFilter}
+                    onChange={(e) => setDesignationFilter(e.target.value as any)}
+                    className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="ALL">All Staff ({users.length})</option>
+                    <option value="HCBP">HCBP Partners ({hcbpCount})</option>
+                    <option value="EPM">EPM Officers ({epmCount})</option>
+                    <option value="ADMIN">System Admins ({adminsCount})</option>
+                    <option value="OTHER">Other Designations</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px] font-semibold">Role:</span>
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="ALL">All Roles ({users.length})</option>
+                    {ALL_ROLES.map((role) => {
+                      const count = users.filter((u) => u.Role === role).length;
+                      return (
+                        <option key={role} value={role}>
+                          {getRoleDefinition(role).name} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -710,10 +845,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       (dist?.DistrictName && dist.DistrictName.toLowerCase().includes(q)) ||
                       (u.Position && u.Position.toLowerCase().includes(q));
                     const matchesRole = roleFilter === 'ALL' || u.Role === roleFilter;
-                    return matchesSearch && matchesRole;
+
+                    const isHcbp = Boolean(u.Position?.includes('HCBP') || u.Position?.includes('Human Capital Business Partner'));
+                    const isEpm = Boolean(u.Position?.includes('EPM') || u.Position?.includes('Employee Performance Management'));
+                    const matchesDesignation =
+                      designationFilter === 'ALL' ||
+                      (designationFilter === 'HCBP' && isHcbp) ||
+                      (designationFilter === 'EPM' && isEpm) ||
+                      (designationFilter === 'ADMIN' && u.Role === 'ADMIN') ||
+                      (designationFilter === 'OTHER' && !isHcbp && !isEpm && u.Role !== 'ADMIN');
+
+                    return matchesSearch && matchesRole && matchesDesignation;
                   })
                   .map((u, idx) => {
                     const dist = districts.find(d => d.DistrictID === u.DistrictID);
+                    const isHcbp = Boolean(u.Position?.includes('HCBP') || u.Position?.includes('Human Capital Business Partner'));
+                    const isEpm = Boolean(u.Position?.includes('EPM') || u.Position?.includes('Employee Performance Management'));
 
                     return (
                       <tr key={`${u.UserID || 'usr'}-${u.Email || 'email'}-${idx}`} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors">
@@ -734,6 +881,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 );
                               })()}
 
+                              {/* Designation specific badge */}
+                              {isHcbp && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-800 flex items-center gap-1 shadow-2xs">
+                                  <Sparkles className="w-2.5 h-2.5 text-sky-500" /> HCBP
+                                </span>
+                              )}
+                              {isEpm && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800 flex items-center gap-1 shadow-2xs">
+                                  <UserCheck className="w-2.5 h-2.5 text-teal-500" /> EPM Officer
+                                </span>
+                              )}
+
                               {/* Quick Role Switcher for instant live effect (ADMIN only) */}
                               {isAdmin && (
                                 <select
@@ -743,10 +902,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     const roleDef = getRoleDefinition(newRole);
                                     const now = new Date().toISOString();
                                     const isDist = roleDef.isDistrictBound;
-                                    const defaultPos = newRole === 'ADMIN'
+                                    const defaultPos = (newRole === 'DISTRICT_HR' && u.Position)
+                                      ? u.Position
+                                      : newRole === 'ADMIN'
                                       ? 'Enterprise System Administrator'
                                       : newRole === 'HO_MANAGER'
-                                      ? 'Head Office HR Manager'
+                                      ? 'Head Office HR Operations & Performance Manager'
                                       : newRole === 'HO_HR'
                                       ? 'Head Office HR Specialist'
                                       : newRole === 'DISTRICT_MANAGER'
@@ -759,7 +920,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       ? 'Authorized District Director'
                                       : newRole === 'EMPLOYEE'
                                       ? 'Bank Staff'
-                                      : 'District HR Officer';
+                                      : 'Human Capital Business Partner (HCBP)';
 
                                     const roleHistory: RoleChangeRecord[] = [
                                       {
@@ -800,7 +961,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </select>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400">{u.Position}</span>
+                            <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">{u.Position}</span>
                           </div>
                         </td>
                         <td className="py-3 px-3.5">
@@ -1011,6 +1172,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )
       )}
 
+      {/* Tab: Bulk CSV Export Hub */}
+      {activeTab === 'exports' && (
+        <AdminBulkExportHub
+          currentUser={currentUser}
+          users={users}
+          districts={districts}
+          reports={reports || []}
+          auditLogs={auditLogs || []}
+          onLogAudit={onLogAudit}
+        />
+      )}
+
       {/* User Create / Edit Modal */}
       {isAdmin && (isCreatingUser || editingUser) && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1058,85 +1231,355 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
 
-              {/* Select Role: All 7 requested Enterprise Roles + Auditor & Director */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Select User Role & Authority Level <span className="text-red-500">*</span>:
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {ALL_ROLES.map((role) => {
-                    const def = getRoleDefinition(role);
-                    const isSelected = userFormData.Role === role;
-                    return (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => {
-                          const isDist = def.isDistrictBound;
-                          setUserFormData({
-                            ...userFormData,
-                            Role: role,
-                            DistrictID: isDist ? (userFormData.DistrictID || 'DIST-01') : null,
-                          });
-                        }}
-                        className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
-                          isSelected
-                            ? `${def.badgeBg} border-purple-500 dark:border-purple-400 ring-2 ring-purple-500/50 shadow-sm`
-                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-bold text-xs flex items-center justify-between">
-                            <span className={isSelected ? def.badgeText : 'text-slate-800 dark:text-slate-200 font-bold'}>{def.name}</span>
-                            {isSelected && <CheckCircle className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[9px] uppercase font-mono font-bold tracking-wider text-slate-400 dark:text-slate-500">{role}</span>
-                            <span className="text-[9px] px-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">{def.category}</span>
+              {/* PRIMARY ROLE ASSIGNMENT: Job Title / Designation with Searchable Type-Ahead Dropdown */}
+              <div className="relative">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Job Title / Designation <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    Role & Permissions Driver
+                  </span>
+                </div>
+
+                {/* Combobox Trigger & Input */}
+                <div className="relative">
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      required
+                      value={userFormData.Position || ''}
+                      onChange={(e) => {
+                        const newPos = e.target.value;
+                        const derivedRole = mapJobTitleToRole(newPos);
+                        const details = getJobTitleDetails(newPos);
+                        setUserFormData({
+                          ...userFormData,
+                          Position: newPos,
+                          Role: derivedRole,
+                          Department: details.department || userFormData.Department,
+                          DistrictID: details.isDistrictBound ? (userFormData.DistrictID || 'DIST-01') : null,
+                        });
+                        setTitleSearchQuery(newPos);
+                        setIsTitleDropdownOpen(true);
+                      }}
+                      onFocus={() => {
+                        setTitleSearchQuery(userFormData.Position || '');
+                        setIsTitleDropdownOpen(true);
+                      }}
+                      placeholder="Search or select job title (e.g. HCBP, EPM Officer, District Manager, Admin)..."
+                      className="w-full bg-white dark:bg-slate-800 border-2 border-purple-300 dark:border-purple-700/80 rounded-xl py-2.5 pl-9 pr-10 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-xs shadow-sm transition"
+                    />
+                    <Search className="w-4 h-4 text-purple-500 absolute left-3 pointer-events-none" />
+                    <button
+                      type="button"
+                      onClick={() => setIsTitleDropdownOpen(!isTitleDropdownOpen)}
+                      className="absolute right-2 p-1.5 text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition"
+                      title="Toggle title list"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isTitleDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+
+                  {/* Dropdown Menu */}
+                  {isTitleDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsTitleDropdownOpen(false)}
+                      />
+                      <div className="absolute z-50 left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl border border-purple-200 dark:border-purple-800/80 shadow-2xl p-2 divide-y divide-slate-100 dark:divide-slate-800/60 animate-in fade-in zoom-in-95 duration-150">
+                        {/* Quick filter chips within dropdown */}
+                        <div className="pb-2 px-1">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                            Official Bank Designations ({OFFICIAL_JOB_TITLES.length} Titles)
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {['HCBP', 'EPM Officer', 'District Manager', 'Branch Manager', 'HO Manager', 'Enterprise Admin'].map(tag => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => {
+                                  const match = OFFICIAL_JOB_TITLES.find(t => t.title.toLowerCase().includes(tag.toLowerCase()));
+                                  if (match) {
+                                    const matchRoleDef = getRoleDefinition(match.role);
+                                    setUserFormData({
+                                      ...userFormData,
+                                      Position: match.title,
+                                      Role: match.role,
+                                      Department: match.department,
+                                      DistrictID: matchRoleDef.isDistrictBound ? (userFormData.DistrictID || 'DIST-01') : null,
+                                    });
+                                    setIsTitleDropdownOpen(false);
+                                  } else {
+                                    setTitleSearchQuery(tag);
+                                  }
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition"
+                              >
+                                {tag}
+                              </button>
+                            ))}
                           </div>
                         </div>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5 leading-snug">
-                          {def.description}
+
+                        {/* Filtered Titles Grouped by Category */}
+                        <div className="pt-2 space-y-3">
+                          {Array.from(new Set(
+                            OFFICIAL_JOB_TITLES
+                              .filter(item => {
+                                const q = (titleSearchQuery || '').toLowerCase().trim();
+                                if (!q) return true;
+                                return (
+                                  item.title.toLowerCase().includes(q) ||
+                                  item.role.toLowerCase().includes(q) ||
+                                  item.department.toLowerCase().includes(q) ||
+                                  item.category.toLowerCase().includes(q)
+                                );
+                              })
+                              .map(item => item.category)
+                          )).map(category => {
+                            const items = OFFICIAL_JOB_TITLES.filter(item => {
+                              const matchesCategory = item.category === category;
+                              const q = (titleSearchQuery || '').toLowerCase().trim();
+                              if (!q) return matchesCategory;
+                              const matchesSearch =
+                                item.title.toLowerCase().includes(q) ||
+                                item.role.toLowerCase().includes(q) ||
+                                item.department.toLowerCase().includes(q) ||
+                                item.category.toLowerCase().includes(q);
+                              return matchesCategory && matchesSearch;
+                            });
+
+                            if (items.length === 0) return null;
+
+                            return (
+                              <div key={category} className="space-y-1">
+                                <div className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400 px-2 py-0.5 bg-purple-50/50 dark:bg-purple-950/30 rounded">
+                                  {category}
+                                </div>
+                                <div className="space-y-0.5">
+                                  {items.map((item) => {
+                                    const isSelected = userFormData.Position === item.title;
+                                    const roleDef = getRoleDefinition(item.role);
+                                    return (
+                                      <button
+                                        key={item.title}
+                                        type="button"
+                                        onClick={() => {
+                                          setUserFormData({
+                                            ...userFormData,
+                                            Position: item.title,
+                                            Role: item.role,
+                                            Department: item.department,
+                                            DistrictID: roleDef.isDistrictBound ? (userFormData.DistrictID || 'DIST-01') : null,
+                                          });
+                                          setIsTitleDropdownOpen(false);
+                                        }}
+                                        className={`w-full text-left p-2 rounded-lg transition flex items-center justify-between text-xs ${
+                                          isSelected
+                                            ? 'bg-purple-500 text-white font-bold shadow-sm'
+                                            : 'hover:bg-purple-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200'
+                                        }`}
+                                      >
+                                        <div className="flex flex-col min-w-0 pr-2">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-semibold">{item.title}</span>
+                                            {item.isKeyDesignation && (
+                                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
+                                                isSelected ? 'bg-purple-600 text-white' : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                              }`}>
+                                                Official Staff Title
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className={`text-[10px] ${isSelected ? 'text-purple-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                                            Mapped Role: <strong className="font-mono">{roleDef.name} ({item.role})</strong> • {roleDef.isDistrictBound ? 'District-Bound' : 'Bank-Wide Oversight'}
+                                          </span>
+                                        </div>
+                                        {isSelected && <Check className="w-4 h-4 text-white flex-shrink-0" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {OFFICIAL_JOB_TITLES.filter(item => {
+                            const q = (titleSearchQuery || '').toLowerCase().trim();
+                            if (!q) return true;
+                            return (
+                              item.title.toLowerCase().includes(q) ||
+                              item.role.toLowerCase().includes(q) ||
+                              item.department.toLowerCase().includes(q) ||
+                              item.category.toLowerCase().includes(q)
+                            );
+                          }).length === 0 && (
+                            <div className="text-center py-4 text-xs text-slate-500 dark:text-slate-400">
+                              <p>No exact match for "{titleSearchQuery}".</p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const customTitle = titleSearchQuery.trim();
+                                  const derivedRole = mapJobTitleToRole(customTitle);
+                                  const details = getJobTitleDetails(customTitle);
+                                  setUserFormData({
+                                    ...userFormData,
+                                    Position: customTitle,
+                                    Role: derivedRole,
+                                    Department: details.department,
+                                    DistrictID: details.isDistrictBound ? (userFormData.DistrictID || 'DIST-01') : null,
+                                  });
+                                  setIsTitleDropdownOpen(false);
+                                }}
+                                className="mt-2 inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-purple-600 text-white font-semibold text-xs hover:bg-purple-700 transition"
+                              >
+                                Use custom title: "{titleSearchQuery}"
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* SYSTEM-ASSIGNED ACCESS & AUTHORITY LEVEL: Auto-generated, Read-Only */}
+              {(() => {
+                const currentPos = userFormData.Position || 'Human Capital Business Partner (HCBP)';
+                const details = getJobTitleDetails(currentPos);
+                const roleDef = details.roleDefinition;
+
+                return (
+                  <div className="p-3.5 rounded-xl border border-purple-200 dark:border-purple-800/80 bg-gradient-to-br from-purple-50/50 via-white to-slate-50 dark:from-purple-950/20 dark:via-slate-900 dark:to-slate-900 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-purple-100 dark:border-purple-900/60 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-purple-600 text-white shadow-xs">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                            System-Assigned Access & Authority Level
+                          </h4>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                            Automatically determined by selected Job Title & Bank RBAC Policy
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Read-Only System Controlled
+                      </span>
+                    </div>
+
+                    {/* Assigned Specs Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div className="p-2.5 rounded-lg bg-white dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
+                          Assigned System Role
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${roleDef.badgeBg} ${roleDef.badgeText} border`}>
+                            {roleDef.name}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-1 block">
+                          ROLE_KEY: {details.role}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-white dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
+                          Authority Level
+                        </span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                          {details.authorityLevel}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                          Governance Category: {roleDef.category}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-white dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
+                          Access Scope
+                        </span>
+                        <span className={`text-xs font-bold block ${details.isDistrictBound ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400'}`}>
+                          {details.isDistrictBound ? 'District-Bound Jurisdiction' : 'Bank-Wide Oversight'}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5 leading-snug">
+                          {details.scopeDescription}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Operational Department & Responsibilities Summary */}
+                    <div className="p-2.5 rounded-lg bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/50 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          Mapped Department: <strong className="text-slate-800 dark:text-slate-200">{details.department}</strong>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {roleDef.description}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {details.responsibilities.map((resp, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                            {resp}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* District Assignment strictly if role is District-Bound */}
+                    {details.isDistrictBound ? (
+                      <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/50 space-y-1.5 animate-fadeIn">
+                        <div className="flex items-center justify-between">
+                          <label className="block font-bold text-amber-900 dark:text-amber-300 text-xs flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            Assign Bank District (1 of 13 Districts) <span className="text-red-500">*</span>
+                          </label>
+                          <span className="text-[9px] uppercase tracking-wider font-bold text-amber-700 dark:text-amber-400">
+                            District Restriction Enforced
+                          </span>
+                        </div>
+                        <select
+                          value={userFormData.DistrictID || 'DIST-01'}
+                          onChange={(e) => setUserFormData({ ...userFormData, DistrictID: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-amber-400 dark:border-amber-700 rounded-lg p-2 text-slate-900 dark:text-slate-100 font-medium text-xs focus:ring-2 focus:ring-amber-500"
+                        >
+                          {districts.map(d => (
+                            <option key={d.DistrictID} value={d.DistrictID}>
+                              {d.DistrictCode} - {d.DistrictName} ({d.Region})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 leading-relaxed">
+                          CoopBank RBAC Policy: Users holding district-level designations ({currentPos}) can only access and file disciplinary reports within their assigned district ({userFormData.DistrictID || 'DIST-01'}).
                         </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* District Assignment (shown if role is district bound) */}
-              {getRoleDefinition(userFormData.Role).isDistrictBound && (
-                <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-800/50 space-y-1.5 animate-fadeIn">
-                  <label className="block font-semibold text-emerald-400 text-xs">
-                    Assign Bank District (1 of 13 Districts) <span className="text-red-500">*</span>:
-                  </label>
-                  <select
-                    value={userFormData.DistrictID || 'DIST-01'}
-                    onChange={(e) => setUserFormData({ ...userFormData, DistrictID: e.target.value })}
-                    className="w-full bg-white dark:bg-slate-900 border border-emerald-700/60 rounded-lg p-2 text-slate-900 dark:text-slate-100 font-medium"
-                  >
-                    {districts.map(d => (
-                      <option key={d.DistrictID} value={d.DistrictID}>
-                        {d.DistrictCode} - {d.DistrictName} ({d.Region})
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Security filter will restrict this user strictly to records with this DistrictID ({userFormData.DistrictID || 'DIST-01'}).
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Job Title / Designation:</label>
-                <input
-                  type="text"
-                  value={userFormData.Position || ''}
-                  onChange={(e) => setUserFormData({ ...userFormData, Position: e.target.value })}
-                  placeholder="e.g. Senior District HR Officer"
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-slate-900 dark:text-slate-100"
-                />
-              </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/50 flex items-start gap-2.5">
+                        <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-bold text-blue-900 dark:text-blue-300">
+                            Bank-Wide Cross-District Authority
+                          </p>
+                          <p className="text-[10px] text-blue-800/80 dark:text-blue-400/80 mt-0.5">
+                            This enterprise designation possesses national oversight across all 13 bank districts without district confinement.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">

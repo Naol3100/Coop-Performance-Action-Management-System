@@ -10,6 +10,8 @@ interface AuditLogViewProps {
 export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAction, setSelectedAction] = useState('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const filteredLogs = logs.filter(log => {
     if (searchQuery.trim()) {
@@ -25,6 +27,18 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
 
     if (selectedAction !== 'ALL' && log.Action !== selectedAction) {
       return false;
+    }
+
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      if (new Date(log.Timestamp) < start) return false;
+    }
+
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      if (new Date(log.Timestamp) > end) return false;
     }
 
     return true;
@@ -89,7 +103,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
           <div className="relative sm:col-span-2">
             <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
             <input
@@ -113,7 +127,26 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
               <option value="CORRECTION_REQUESTED">Correction Requested</option>
               <option value="USER_ROLE_ASSIGNED">User Role Assigned</option>
               <option value="USER_DEACTIVATED">User Deactivated</option>
+              <option value="BULK_CSV_EXPORT">Bulk CSV Export</option>
             </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              aria-label="Filter audit logs start date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+            />
+            <span className="text-slate-400 text-xs">-</span>
+            <input
+              type="date"
+              aria-label="Filter audit logs end date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+            />
           </div>
         </div>
       </div>
